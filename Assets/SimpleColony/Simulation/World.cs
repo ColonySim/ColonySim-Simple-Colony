@@ -232,7 +232,6 @@ namespace SimpleColony
             }
             foreach (var module in modules) module.Step(this, dt);
             foreach (var pawn in pawns) pawn.Step(this, jobs, behaviors, dt);
-            if (Tick % 50 == 0 && Stores.Spend(Resource.Matter, 10)) Travel.ImproveTransportation();
             if (Tick % 100 == 0)
             {
                 foreach (var node in nodes)
