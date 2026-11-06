@@ -27,9 +27,14 @@ namespace SimpleColony
             foreach (var node in world.Nodes)
             {
                 if (node.Id == World.Home || node.Priority == 0 || !world.Travel.Accessible(node, pawn.Role == Profession.Defender) || !behaviors[pawn.Role].CanWork(world, node)) continue;
+                if (pawn.Role == Profession.Defender && pawn.DefenderMode == DefenderMode.Patrol && !node.Known && !world.Frontier(node.Id)) continue;
                 // An assignment reserves the defense job immediately, including travel time.
                 if (pawn.Role == Profession.Defender && DefenseOccupied(node.Id)) continue;
                 float score = (world.Travel.Length(world.Nodes[pawn.At], node) + Reservations(node.Id) * 4) / node.Priority;
+                if (pawn.Role == Profession.Stabilizer)
+                {
+                    foreach (int next in node.Links) if (world.Nodes[next].Threat > 0) { score /= 4; break; }
+                }
                 if (score >= best) continue;
                 var route = pathfinder.Find(pawn.At, node.Id, pawn.Role == Profession.Defender);
                 if (route == null) continue;

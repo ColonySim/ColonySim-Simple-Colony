@@ -8,20 +8,28 @@ namespace SimpleColony
     {
         Func<World> getWorld;
         Text freeWorkers;
+        Button recruit;
         readonly Text[] counts = new Text[8];
         readonly Button[] decrease = new Button[8], increase = new Button[8], increaseThree = new Button[8];
         float elapsed;
 
-        public void Initialize(Font font, Func<World> world, string[] names)
+        public void Initialize(Font font, Func<World> world, string[] names, Action<Profession> inspect = null)
         {
             getWorld = world;
-            freeWorkers = Label(transform, font, "", 20, -55, 370, 28);
+            freeWorkers = Label(transform, font, "", 20, -52, 180, 40);
+            recruit = Counter(transform,font,"+1 · 25 еды",208,-52,() => { getWorld().Recruit(Profession.Unemployed); Refresh(); });
+            Place(recruit.GetComponent<RectTransform>(),208,-52,150,40);
+            Place(recruit.GetComponentInChildren<Text>().rectTransform,30,0,120,40);
+            var preview = new GameObject("Unemployed preview",typeof(RectTransform),typeof(CanvasRenderer),typeof(UiIcon));
+            preview.transform.SetParent(recruit.transform,false);
+            var icon = preview.GetComponent<UiIcon>(); icon.Symbol = "pawn"; icon.color = Palette.Professions[(int)Profession.Unemployed]; icon.raycastTarget = false;
+            Place(icon.rectTransform,6,-9,22,22);
             var viewport = new GameObject("Workers viewport", typeof(RectTransform), typeof(Image), typeof(RectMask2D), typeof(ScrollRect));
             viewport.transform.SetParent(transform, false);
             viewport.GetComponent<Image>().color = Color.clear;
             var viewportRect = (RectTransform)viewport.transform;
             viewportRect.anchorMin = Vector2.zero; viewportRect.anchorMax = Vector2.one;
-            viewportRect.offsetMin = new Vector2(12, 12); viewportRect.offsetMax = new Vector2(-12, -94);
+            viewportRect.offsetMin = new Vector2(12, 12); viewportRect.offsetMax = new Vector2(-12, -104);
             var content = new GameObject("Workers", typeof(RectTransform)); content.transform.SetParent(viewport.transform, false);
             var contentRect = (RectTransform)content.transform;
             contentRect.anchorMin = new Vector2(0, 1); contentRect.anchorMax = Vector2.one; contentRect.pivot = new Vector2(.5f, 1);
@@ -31,7 +39,14 @@ namespace SimpleColony
             {
                 int index = i;
                 float y = -i * 54;
-                Label(content.transform, font, names[i], 4, y - 12, 134, 28);
+                var name = Label(content.transform,font,names[i],4,y-12,134,28);
+                var hit = new GameObject("Profession information",typeof(RectTransform),typeof(Image),typeof(Button));
+                hit.transform.SetParent(content.transform,false);
+                Place((RectTransform)hit.transform,4,y-12,134,28);
+                var area = hit.GetComponent<Image>(); area.color = Color.clear;
+                name.transform.SetParent(hit.transform,false); Place(name.rectTransform,0,0,134,28);
+                var info = hit.GetComponent<Button>(); info.targetGraphic = area;
+                info.onClick.AddListener(() => inspect?.Invoke((Profession)index));
                 counts[i] = Label(content.transform, font, "", 140, y - 12, 30, 28);
                 decrease[i] = Counter(content.transform, font, "−1", 176, y, () => Change(index, -1));
                 increase[i] = Counter(content.transform, font, "+1", 230, y, () => Change(index, 1));
@@ -46,6 +61,7 @@ namespace SimpleColony
         {
             var world = getWorld(); if (world == null) return;
             int free = world.ProfessionCount(Profession.Unemployed);
+            recruit.interactable = world.CanRecruit;
             freeWorkers.text = "Безработные " + free;
             for (int i = 0; i < 8; i++)
             {

@@ -15,11 +15,12 @@ namespace SimpleColony
         internal void Report(string message) { Event = message; }
         internal void RegisterBehavior(Profession role, IProfessionBehavior behavior) { behaviors.Add(role, behavior); }
         readonly List<Pawn> pawns = new List<Pawn>();
-        readonly Random random;
+        readonly IRandomSource random;
         readonly Pathfinder pathfinder;
         readonly Dictionary<Profession, IProfessionBehavior> behaviors;
         public IReadOnlyList<Node> Nodes => nodes;
         public IReadOnlyList<Pawn> Pawns => pawns;
+        public ConstructionService Construction { get; }
         public Inventory Stores { get; } = new Inventory();
         public TravelPolicy Travel { get; } = new TravelPolicy();
         public int Seed { get; }
@@ -39,15 +40,16 @@ namespace SimpleColony
         public bool CanResearch => CanResearchTechnology(ResearchType.Transport);
         public bool CanResearchTechnology(ResearchType type) => researchModule != null && !Lost && Research.CanPurchase(type, Stores);
         public string Event { get; private set; } = "Колония основана";
-        public World(int seed, Mechanics mechanics = Mechanics.All)
+        public World(int seed, Mechanics mechanics = Mechanics.All, IRandomSource randomSource = null)
         {
             if ((mechanics & ~Mechanics.All) != 0) throw new ArgumentOutOfRangeException(nameof(mechanics));
             EnabledMechanics = mechanics;
-            Seed = seed; random = new Random(seed); pathfinder = new Pathfinder(this);
+            Construction = new ConstructionService(this);
+            Seed = seed; random = randomSource ?? new SeededRandomSource(seed); pathfinder = new Pathfinder(this);
             behaviors = new Dictionary<Profession, IProfessionBehavior> {
                 { Profession.Gatherer, new GatheringBehavior(Resource.Food) },
                 { Profession.Scout, new ExplorationBehavior() },
-                { Profession.Builder, new GatheringBehavior(Resource.Matter) }, { Profession.Supplier, new GatheringBehavior(Resource.Charge) },
+                { Profession.Builder, new BuildingBehavior() }, { Profession.Supplier, new SupplyGatheringBehavior() },
                 { Profession.Medic, new GatheringBehavior(Resource.Medicine) }
             };
             graph = new WorldGraph(random);
@@ -64,6 +66,24 @@ namespace SimpleColony
             foreach (var module in modules) module.Install(this);
         }
         void AddPawn(Profession role) { pawns.Add(new Pawn(pawns.Count, role)); }
+        public void GrantDebugResources()
+        {
+            foreach (Resource resource in Enum.GetValues(typeof(Resource))) Stores.Add(resource,1000);
+        }
+        public bool HasEssence
+        {
+            get
+            {
+                if (Stores[Resource.Stability] > 0) return true;
+                foreach (var pawn in pawns)
+                    if (pawn.Health > 0 && pawn.Role == Profession.Stabilizer && pawn.CargoType == Resource.Stability && pawn.Cargo > 0) return true;
+                return false;
+            }
+        }
+        public bool HasThreats
+        {
+            get { foreach (var node in nodes) if (node.Threat > 0) return true; return false; }
+        }
         public bool Supports(Profession role) => role == Profession.Unemployed || behaviors.ContainsKey(role);
         public bool Recruit(Profession role)
         {
@@ -79,6 +99,79 @@ namespace SimpleColony
         public bool Frontier(int id) => graph.Frontier(id);
         public int Edges() => graph.Edges();
         public int Path(int start, int goal, bool fighter) { var route = pathfinder.Find(start, goal, fighter); return route == null ? -1 : route.Count == 0 ? start : route[0]; }
+        public bool SetDefenderMode(int pawnId, DefenderMode mode)
+        {
+            if (Lost || pawnId < 0 || pawnId >= pawns.Count || !Enum.IsDefined(typeof(DefenderMode),mode)) return false;
+            var pawn = pawns[pawnId];
+            if (pawn.Role != Profession.Defender || pawn.Health <= 0) return false;
+            pawn.SetDefenderMode(mode);
+            return true;
+        }
+        internal int NextPatrolNode(Pawn pawn)
+        {
+            var boundary = new List<Node>();
+            foreach (var node in nodes)
+            {
+                if (!node.Known || node.Blocked || node.Id == Home) continue;
+                bool edge = node.Links.Count < 3;
+                foreach (int next in node.Links) edge |= !nodes[next].Known;
+                if (edge) boundary.Add(node);
+            }
+            boundary.Sort((a,b) => Math.Atan2(a.Y,a.X).CompareTo(Math.Atan2(b.Y,b.X)));
+            int position = boundary.FindIndex(n => n.Id == pawn.At);
+            for (int step = 1; step <= boundary.Count; step++)
+            {
+                int id = boundary[(position + step) % boundary.Count].Id;
+                if (id != pawn.At && CanVisit(pawn,id)) return id;
+            }
+            return -1;
+        }
+        internal bool NeedsResupply(Pawn pawn)
+        {
+            var route = pathfinder.Find(pawn.At,Home,pawn.Role == Profession.Defender);
+            if (route == null) return true;
+            float food = 0, energy = 0; int previous = pawn.At;
+            foreach (int next in route)
+            {
+                food += Travel.FoodCost(nodes[previous],nodes[next]);
+                energy += Travel.EnergyCost(nodes[previous],nodes[next]);
+                previous = next;
+            }
+            return pawn.Food < food + 15 || pawn.Energy < energy + 10;
+        }
+        internal bool CanVisit(Pawn pawn, int nodeId)
+        {
+            bool defender = pawn.Role == Profession.Defender;
+            int start = pawn.Next >= 0 ? pawn.Next : pawn.At;
+            var outward = pathfinder.Find(start,nodeId,defender);
+            var homeward = pathfinder.Find(nodeId,Home,defender);
+            if (outward == null || homeward == null) return false;
+            float food = 0, energy = 0;
+            foreach (var route in new[] { outward,homeward })
+            {
+                int previous = route == outward ? start : nodeId;
+                foreach (int next in route)
+                {
+                    food += Travel.FoodCost(nodes[previous],nodes[next]);
+                    energy += Travel.EnergyCost(nodes[previous],nodes[next]);
+                    previous = next;
+                }
+            }
+            return pawn.Food >= food + 20 && pawn.Energy >= energy + 15;
+        }
+        public bool DirectPawn(int pawnId, int nodeId)
+        {
+            if (Lost || pawnId < 0 || pawnId >= pawns.Count || nodeId < 0 || nodeId >= nodes.Count) return false;
+            var pawn = pawns[pawnId];
+            if (pawn.Health <= 0 || !nodes[nodeId].Known || nodes[nodeId].Blocked || pawn.PendingRole.HasValue) return false;
+            if (!CanVisit(pawn,nodeId)) return false;
+            pawn.OrderMove(nodeId);
+            return true;
+        }
+        public void CancelOrder(int pawnId)
+        {
+            if (pawnId >= 0 && pawnId < pawns.Count) pawns[pawnId].CancelOrder();
+        }
         public bool Convert(int pawnId, Profession role)
         {
             if (Lost || pawnId < 0 || pawnId >= pawns.Count || !Supports(role)) return false;
@@ -111,11 +204,22 @@ namespace SimpleColony
             return true;
         }
         public void SetPriority(int id) { if (id != Home && nodes[id].Known) nodes[id].CyclePriority(); }
-        public void ToggleAccess(int id) { if (id != Home && nodes[id].Known) nodes[id].ToggleAccess(); }
+        public void ToggleAccess(int id)
+        {
+            if (id == Home || !nodes[id].Known) return;
+            nodes[id].ToggleAccess();
+            if (!nodes[id].Blocked) return;
+            foreach (var pawn in pawns)
+            {
+                if (pawn.At == id || pawn.Next == id) pawn.Evacuate();
+                else if (pawn.OrderedDestination == id) pawn.CancelOrder();
+            }
+        }
         public void Step() => Step(.1f);
         public void Step(float dt)
         {
             if (Lost || dt <= 0 || float.IsInfinity(dt) || float.IsNaN(dt)) return;
+            Construction.Step(dt);
             Tick++; Time += dt;
             foreach (var node in nodes)
             {

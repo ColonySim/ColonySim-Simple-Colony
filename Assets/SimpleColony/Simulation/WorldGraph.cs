@@ -6,16 +6,19 @@ namespace SimpleColony
     public sealed class WorldGraph
     {
         readonly List<Node> nodes = new List<Node>();
-        readonly Random random;
+        readonly IRandomSource random;
+        readonly ResourceDistribution distribution;
         public IReadOnlyList<Node> Nodes { get; }
         public int Revision { get; private set; }
-        internal WorldGraph(Random random)
+        internal WorldGraph(IRandomSource random)
         {
-            this.random = random;
+            this.random = random; distribution = new ResourceDistribution(random);
             Nodes = nodes.AsReadOnly();
             nodes.Add(new Node(0, 0, 0)); nodes[0].Reveal(); Expand(0);
             int initial = nodes.Count;
             for (int i = 1; i < initial; i++) { nodes[i].Reveal(); Expand(i); }
+            if (nodes[2].Find(Resource.Matter) == null) nodes[2].Add(new Deposit(Resource.Matter, 70));
+            if (nodes[3].Find(Resource.Knowledge) == null) nodes[3].Add(new Deposit(Resource.Knowledge, 50));
             if (nodes[1].Find(Resource.Food) == null) nodes[1].Add(new Deposit(Resource.Food, 80));
         }
         void Connect(int a, int b) { nodes[a].Link(b); nodes[b].Link(a); Revision++; }
@@ -31,8 +34,7 @@ namespace SimpleColony
                 Node nearby = nodes.Find(n => n.Id != id && (n.X - x) * (n.X - x) + (n.Y - y) * (n.Y - y) < 1.3f);
                 if (nearby != null) { Connect(id, nearby.Id); continue; }
                 var node = new Node(nodes.Count, x, y);
-                int first = random.Next(6); node.Add(new Deposit((Resource)first, 35 + random.Next(40)));
-                if (random.NextDouble() < .65) node.Add(new Deposit((Resource)((first + 1 + random.Next(5)) % 6), 25 + random.Next(35)));
+                distribution.Populate(node);
                 nodes.Add(node); Connect(id, node.Id);
             }
         }

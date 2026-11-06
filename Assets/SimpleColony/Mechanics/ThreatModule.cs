@@ -5,8 +5,8 @@ namespace SimpleColony
 {
     internal sealed class ThreatModule : MechanicModule
     {
-        readonly Random random;
-        public ThreatModule(Random random) { this.random = random; }
+        readonly IRandomSource random;
+        public ThreatModule(IRandomSource random) { this.random = random; }
         internal override void Install(World world)
         {
             world.RegisterBehavior(Profession.Defender, new CombatBehavior());

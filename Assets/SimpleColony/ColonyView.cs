@@ -9,8 +9,16 @@ namespace SimpleColony
     public sealed class ColonyView : MonoBehaviour
     {
         [SerializeField] Mechanics sessionMechanics = Mechanics.All;
-        readonly RectTransform[] professionCards = new RectTransform[8];
-        Button researchMenu;
+        GameObject construction;
+        readonly System.Collections.Generic.List<Button> buildButtons = new System.Collections.Generic.List<Button>();
+        readonly System.Collections.Generic.List<Text> stockAmounts = new System.Collections.Generic.List<Text>();
+        Button researchMenu, buildNodeButton;
+        int directingPawn = -1;
+        Action inspectSelection;
+        Func<string> inspectSummary;
+        string inspectedTitle;
+        Color inspectedColor;
+        Button moveOrder, defenderMode;
         Sprite buttonSkin;
         World world;
         [SerializeField] GameObject generatedInterface, generatedInput;
@@ -21,16 +29,15 @@ namespace SimpleColony
         RectTransform topPanel, selectionPanel, colonyControlsRect;
         CanvasScaler canvasScaler;
         bool portraitLayout, layoutReady;
-        Text caption, description, details, stocks, diagnosticText, feedback, speedText, recruitRoleText;
+        Text caption, description, details, diagnosticText, feedback, speedText;
         DescriptionPopup descriptionPopup;
         readonly RuntimeStatistics statistics = new RuntimeStatistics();
         readonly System.Collections.Generic.List<Button> researchButtons = new System.Collections.Generic.List<Button>();
         readonly System.Collections.Generic.List<Text> researchPrices = new System.Collections.Generic.List<Text>();
-        Image recruitPortrait;
         UiIcon playIcon;
         Image portrait;
-        GameObject help, diagnostics, pawnActions, nodeActions, coreActions, recruitment, research, workforce;
-        Button convert, accessButton, recruitButton;
+        GameObject help, diagnostics, pawnActions, nodeActions, coreActions, research, workforce;
+        Button convert, accessButton;
         Font font;
         Sprite disc;
         Texture2D discTexture;
@@ -40,14 +47,13 @@ namespace SimpleColony
         // Zero selects unrestricted simulation within the per-frame CPU budget.
         static readonly int[] Speeds = { 1, 2, 5, 10, 25, 50, 100, 0 };
         int speedIndex;
-        Profession recruitRole = Profession.Unemployed;
         Profession chosenRole;
         public int SelectedNode { get; private set; }
         public int SelectedPawn { get; private set; } = -1;
         public bool MapInteractive => map != null && map.isActiveAndEnabled;
         static readonly string[] Names = { "Собиратель", "Защитник", "Разведчик", "Исследователь", "Строитель", "Снабженец", "Медик", "Стабилизатор", "Безработный" };
-        static readonly string[] Descriptions = { "Доставляет питание", "Подавляет угрозы", "Открывает территории", "Получает знания", "Доставляет материю", "Доставляет заряд", "Доставляет лекарства", "Защищает соседние узлы", "Ожидает назначения профессии" };
-        static readonly string[] ResourceNames = { "Питание", "Знания", "Материя", "Заряд", "Лекарства", "Стабильность" };
+        static readonly string[] Descriptions = { "Доставляет питание", "Подавляет угрозы", "Открывает территории", "Получает знания", "Доставляет материю", "Доставляет заряд и эссенцию", "Доставляет лекарства", "Несёт эссенцию и укрепляет территории", "Ожидает назначения профессии" };
+        static readonly string[] ResourceNames = { "Питание", "Знания", "Материя", "Заряд", "Лекарства", "Эссенция" };
         static readonly string[] States = { "Ожидает работу", "В пути", "Работает", "Восстанавливается", "Погиб", "На посту" };
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
@@ -66,6 +72,7 @@ namespace SimpleColony
             var previousInput = generatedInput != null ? generatedInput : transform.Find("Input")?.gameObject;
             if (previousInterface != null) { previousInterface.SetActive(false); Destroy(previousInterface); }
             if (previousInput != null) { previousInput.SetActive(false); Destroy(previousInput); }
+            buildButtons.Clear(); stockAmounts.Clear();
             researchButtons.Clear();
             researchPrices.Clear();
             if (disc != null) Destroy(disc);
@@ -78,7 +85,7 @@ namespace SimpleColony
             Screen.autorotateToLandscapeRight = true;
             Screen.orientation = ScreenOrientation.AutoRotation;
             font = UnityEngine.Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-            CreateDisc(); buttonSkin = Sprite.Create(discTexture, disc.rect, new Vector2(.5f,.5f), 100, 0, SpriteMeshType.FullRect, new Vector4(24,24,24,24)); BuildInterface(); Restart(sessionSeed);
+            CreateDisc(); buttonSkin = Sprite.Create(discTexture, disc.rect, new Vector2(.5f,.5f), 100, 0, SpriteMeshType.FullRect, new Vector4(24,24,24,24)); BuildInterface(); Restart(SessionSeed.Create());
         }
         void CreateDisc()
         {
@@ -122,8 +129,20 @@ namespace SimpleColony
             sessionBar.sizeDelta = new Vector2(210,64); sessionBar.anchoredPosition = Vector2.zero;
             playIcon = Button(sessionBar, "▶", 12, -7, 54, 50, () => { paused = !paused; Refresh(); }).GetComponentInChildren<UiIcon>();
             speedText = Button(sessionBar, "×1", 74, -7, 64, 50, () => { speedIndex = (speedIndex + 1) % Speeds.Length; clock.Reset(); Refresh(); }, holdText: "Скорость симуляции. MAX — максимально возможная в пределах времени кадра.").GetComponentInChildren<Text>();
-            Button(sessionBar, "↻", 146, -7, 54, 50, () => Restart(world.Seed + 1));
-            stocks = Label(top, "", 218, -9, 530, 45, 16);
+            Button(sessionBar, "↻", 146, -7, 54, 50, () => Restart(SessionSeed.Create()));
+            string[] resourceIcons = { "food", "research", "matter", "charge", "medicine", "ring" };
+            var stockRow = Panel(top, "Inventory", Color.clear);
+            stockRow.anchorMin = new Vector2(0,1); stockRow.anchorMax = new Vector2(1,1); stockRow.pivot = new Vector2(0,1);
+            stockRow.anchoredPosition = new Vector2(12,-64); stockRow.sizeDelta = new Vector2(-24,40);
+            var layout = stockRow.gameObject.AddComponent<HorizontalLayoutGroup>(); layout.childControlWidth = true; layout.childControlHeight = true; layout.childForceExpandWidth = true; layout.spacing = 2;
+            for (int i = 0; i < 6; i++)
+            {
+                Resource resource = (Resource)i;
+                var chip = Button(stockRow, "Resource", 0, 0, 68, 36, () => InspectResource(resource), iconSymbol: resourceIcons[i]);
+                chip.GetComponentInChildren<UiIcon>().color = Palette.Resources[i];
+                Place(chip.GetComponentInChildren<UiIcon>().rectTransform, 4,-7,22,22);
+                stockAmounts.Add(Label(chip.transform,"",29,-3,52,30,16));
+            }
             Button(top, "?", -118, -7, 48, 50, () => TogglePanel(help), true);
             Button(top, "…", -60, -7, 48, 50, () => TogglePanel(diagnostics), true);
             var bottom = Panel(safeArea, "Selection", new Color(.065f, .095f, .13f)); Anchor(bottom, Vector2.zero, new Vector2(1, 0), Vector2.zero, new Vector2(0, 140));
@@ -133,38 +152,30 @@ namespace SimpleColony
             description = Label(bottom, "", 210, -14, 600, 28, 19);
             details = Label(bottom, "", 210, -44, 700, 30, 16);
             pawnActions = new GameObject("Profession actions", typeof(RectTransform)); pawnActions.transform.SetParent(bottom, false); Stretch((RectTransform)pawnActions.transform);
-            Button(pawnActions.transform, "‹", 12, -18, 46, 48, () => ChangeRole(-1));
-            Button(pawnActions.transform, "›", 138, -18, 46, 48, () => ChangeRole(1));
-            convert = Button(pawnActions.transform, "Преобразовать", 210, -76, 180, 48, Convert);
+            convert = Button(pawnActions.transform, "Работа →", 210, -76, 100, 32, CycleProfession);
+            moveOrder = Button(pawnActions.transform,"Направить",320,-76,125,36,BeginMoveOrder);
+            defenderMode = Button(pawnActions.transform,"Режим",460,-76,150,36,() =>
+            {
+                var pawn = world.Pawns[SelectedPawn];
+                world.SetDefenderMode(SelectedPawn,(DefenderMode)(((int)pawn.DefenderMode+1)%3)); Refresh();
+            });
             nodeActions = new GameObject("Territory actions", typeof(RectTransform)); nodeActions.transform.SetParent(bottom, false); Stretch((RectTransform)nodeActions.transform);
             accessButton = Button(nodeActions.transform, "Доступ", 210, -76, 180, 48, () => { world.ToggleAccess(SelectedNode); Refresh(); });
-            Button(bottom, "⌂", -64, -14, 50, 48, () => { map.Pan = Vector2.zero; map.Zoom = Screen.height > Screen.width ? 40 : 60; SelectNode(World.Home); }, true);
-            string[] symbols = { "food", "shield", "pan", "research", "matter", "charge", "medicine", "ring" };
-            for (int i = 0; i < professionCards.Length; i++)
-            {
-                Profession role = (Profession)i;
-                var card = Button(bottom, Names[i], 0, 0, 46, 42, () => PreviewProfession(role),
-                    iconSymbol: symbols[i], holdText: Descriptions[i]);
-                card.GetComponentInChildren<UiIcon>().color = Palette.Professions[i];
-                professionCards[i] = card.GetComponent<RectTransform>();
-            }
+            Button(bottom, "?", -64,-14,44,40,ShowSelectedInfo,true);
+            buildNodeButton = Button(nodeActions.transform, "Строить", 410,-76,136,42,() => TogglePanel(construction));
             feedback = Label(bottom, "", 410, -88, 500, 30, 16);
             coreActions = new GameObject("Colony controls", typeof(RectTransform)); coreActions.transform.SetParent(safeArea, false);
             var colonyRect = (RectTransform)coreActions.transform;
             colonyControlsRect = colonyRect;
             colonyRect.anchorMin = colonyRect.anchorMax = new Vector2(0, 1); colonyRect.pivot = new Vector2(0, 1);
             colonyRect.anchoredPosition = new Vector2(12, -80); colonyRect.sizeDelta = new Vector2(64, 208);
-            Button(coreActions.transform, "Найм", 0, 0, 64, 56, () => TogglePanel(recruitment), iconSymbol: "hire", holdText: "Найм пешек. Выберите профессию. Стоимость — 25 питания.");
+            Button(coreActions.transform, "Пешки", 0, 0, 64, 56, () => TogglePanel(workforce), iconSymbol: "pawn", holdText: "Создание пешек и управление работой.");
             researchMenu = Button(coreActions.transform, "Исследования", 0, -72, 64, 56, () => TogglePanel(research), iconSymbol: "research", holdText: "Исследования колонии. Покупаются за знания. Удерживайте значок улучшения, чтобы прочитать его эффект.");
-            Button(coreActions.transform, "Профессии", 0, -144, 64, 56, () => TogglePanel(workforce), iconSymbol: "pawn", holdText: "Численность профессий. +1 и +3 назначают безработных, −1 освобождает работника. Смена выполняется на ядре; счётчики учитывают назначенные переводы.");
             help = new GameObject("Help", typeof(RectTransform)); help.AddComponent<HelpPanel>().Initialize(safeArea, font, descriptionPopup); help.SetActive(false);
             diagnostics = Overlay("Diagnostics", ""); diagnosticText = diagnostics.transform.Find("Body").GetComponent<Text>();
-            recruitment = Overlay("Recruitment", ""); recruitRoleText = recruitment.transform.Find("Body").GetComponent<Text>();
-            recruitPortrait = Panel(recruitment.transform, "Portrait", Color.white).GetComponent<Image>(); recruitPortrait.sprite = disc; Place(recruitPortrait.rectTransform, 175, -115, 56, 56);
-            Button(recruitment.transform, "‹", 90, -119, 48, 48, () => { recruitRole = NextProfession(recruitRole, -1); Refresh(); });
-            Button(recruitment.transform, "›", 270, -119, 48, 48, () => { recruitRole = NextProfession(recruitRole, 1); Refresh(); });
-            Label(recruitment.transform, World.RecruitCost + " питания", 20, -206, 370, 30, 19);
-            recruitButton = Button(recruitment.transform, "Нанять", 20, -256, 370, 48, () => { world.Recruit(recruitRole); Refresh(); });
+            diagnosticText.fontSize = 14;
+            diagnosticText.rectTransform.sizeDelta = new Vector2(370,210);
+            Button(diagnostics.transform,"DEV +1000 каждого",20,-292,370,40,() => { world.GrantDebugResources(); Refresh(); });
             research = Overlay("Research", "");
             foreach (var definition in ResearchProgress.Definitions)
             {
@@ -180,12 +191,25 @@ namespace SimpleColony
                 researchButtons.Add(button);
             }
             workforce = Overlay("Workforce", "");
-            workforce.AddComponent<WorkforcePanel>().Initialize(font, () => world, Names);
+            workforce.AddComponent<WorkforcePanel>().Initialize(font, () => world, Names, profession => ShowInfo(Names[(int)profession]+"\n\n"+Descriptions[(int)profession]));
+            construction = Overlay("Construction", "");
+            for (int i = 0; i < BuildingDefinition.All.Count; i++)
+            {
+                var definition = BuildingDefinition.All[i];
+                var build = Button(construction.transform, definition.Name,20,-60-i*85,306,48,() =>
+                {
+                    feedback.text = world.Construction.Build(SelectedNode,definition.Type) ? "Заказ ожидает строителя" : "Стройка недоступна";
+                    construction.SetActive(false); Refresh();
+                }, holdText: definition.Description);
+                Button(construction.transform,"?",338,-60-i*85,42,42,() => ShowInfo(definition.Name+"\n\n"+definition.Description+"\nНужен строитель. Цена — "+definition.FoodCost+" еды и "+definition.MatterCost+" материи."));
+                buildButtons.Add(build);
+                Label(construction.transform,definition.FoodCost+" еды · "+definition.MatterCost+" материи",20,-108-i*85,360,26,15);
+            }
         }
         GameObject Overlay(string name, string body)
         {
             var panel = Panel(safeArea, name, new Color(.08f, .115f, .15f));
-            bool colonyPanel = name == "Recruitment" || name == "Research" || name == "Workforce";
+            bool colonyPanel = name == "Research" || name == "Workforce";
             Vector2 anchor = colonyPanel ? new Vector2(0, 1) : new Vector2(1, 1);
             panel.anchorMin = panel.anchorMax = panel.pivot = anchor;
             panel.anchoredPosition = new Vector2(colonyPanel ? 88 : -12, -72); panel.sizeDelta = new Vector2(410, 390);
@@ -198,14 +222,14 @@ namespace SimpleColony
             bool show = !panel.activeSelf;
             help.SetActive(false);
             diagnostics.SetActive(false);
-            recruitment.SetActive(false);
+            if (construction != null) construction.SetActive(false);
             research.SetActive(false);
             workforce.SetActive(false);
             panel.SetActive(show);
             Refresh();
         }
-        public void SelectPawn(int id) { SelectedPawn = id; chosenRole = world.Pawns[id].Role; Refresh(); }
-        public void SelectNode(int id) { SelectedPawn = -1; SelectedNode = id; Refresh(); }
+        public void SelectPawn(int id) { descriptionPopup.Close(); inspectSelection = null; SelectedPawn = id; chosenRole = world.Pawns[id].Role; Refresh(); }
+        public void SelectNode(int id) { descriptionPopup.Close(); inspectSelection = null; SelectedPawn = -1; SelectedNode = id; Refresh(); }
         Profession NextProfession(Profession current, int direction)
         {
             do
@@ -214,35 +238,25 @@ namespace SimpleColony
             } while (!world.Supports(current));
             return current;
         }
-        void ChangeRole(int change) { chosenRole = NextProfession(chosenRole, change); Refresh(); }
-        void Convert()
+        void CycleProfession()
         {
-            feedback.text = world.Convert(SelectedPawn, chosenRole) ? "Смена профессии назначена на ядре" : "Преобразование недоступно";
-            Refresh();
-        }
-        void PreviewProfession(Profession role)
-        {
-            if (SelectedPawn < 0 || world.Pawns[SelectedPawn].Health <= 0)
-            {
-                foreach (var pawn in world.Pawns)
-                    if (pawn.Health > 0) { SelectedPawn = pawn.Id; break; }
-            }
-            chosenRole = role;
+            var pawn = world.Pawns[SelectedPawn];
+            chosenRole = NextProfession(pawn.PendingRole ?? pawn.Role,1);
+            world.Convert(SelectedPawn,chosenRole);
             Refresh();
         }
         void Restart(int seed)
         {
+            inspectSelection = null;
+            directingPawn = -1;
             sessionSeed = seed;
             world = new World(seed, sessionMechanics);
-            for (int i = 0; i < professionCards.Length; i++)
-                professionCards[i].gameObject.SetActive(world.Supports((Profession)i));
-            recruitRole = Profession.Unemployed;
             speedIndex = 0;
             map.World = world; clock.Reset(); paused = false;
             statistics.Reset();
             researchMenu.gameObject.SetActive((sessionMechanics & Mechanics.Research) != 0);
             map.Pan = Vector2.zero; map.Zoom = Screen.height > Screen.width ? 40 : 60; help.SetActive(false); diagnostics.SetActive(false);
-            recruitment.SetActive(false); research.SetActive(false);
+            if (construction != null) construction.SetActive(false);
             workforce.SetActive(false);
             feedback.text = ""; SelectNode(World.Home);
         }
@@ -263,9 +277,6 @@ namespace SimpleColony
             ApplyMapLayout();
             playIcon.Symbol = paused ? "▶" : "Ⅱ"; playIcon.SetVerticesDirty();
             speedText.text = Speeds[speedIndex] == 0 ? "MAX" : "×" + Speeds[speedIndex];
-            recruitRoleText.text = Names[(int)recruitRole] + "\n" + Descriptions[(int)recruitRole];
-            recruitPortrait.color = Palette.Professions[(int)recruitRole];
-            recruitButton.interactable = world.CanRecruit && world.Supports(recruitRole);
             for (int i = 0; i < researchButtons.Count; i++)
             {
                 var technology = ResearchProgress.Definitions[i];
@@ -274,16 +285,21 @@ namespace SimpleColony
                 researchButtons[i].GetComponentInChildren<UiIcon>().color = completed ? Palette.Resources[2] : Color.white;
                 researchPrices[i].text = world.Research.Level(technology.Type) + "/" + technology.MaxLevel + (completed ? " · MAX" : " · " + world.Research.NextCost(technology.Type) + " ◆");
             }
-            stocks.text = "<color=#FFCA51>■</color> " + world.Stores[Resource.Food].ToString("0");
+            for (int i = 0; i < stockAmounts.Count; i++) stockAmounts[i].text = world.Stores[(Resource)i].ToString("0");
+            for (int i = 0; i < buildButtons.Count; i++) buildButtons[i].interactable = SelectedPawn < 0 && world.Construction.CanBuild(SelectedNode, BuildingDefinition.All[i].Type);
             bool pawnSelected = SelectedPawn >= 0;
             pawnActions.SetActive(pawnSelected); nodeActions.SetActive(!pawnSelected && SelectedNode != World.Home && world.Nodes[SelectedNode].Known);
             if (pawnSelected)
             {
                 var pawn = world.Pawns[SelectedPawn];
-                portrait.color = Palette.Professions[(int)chosenRole]; caption.text = Names[(int)chosenRole]; description.text = Descriptions[(int)chosenRole];
-                details.text = "Пешка №" + (pawn.Id + 1) + " · " + States[(int)pawn.State];
+                defenderMode.gameObject.SetActive(pawn.Role == Profession.Defender);
+                defenderMode.GetComponentInChildren<Text>().text = pawn.DefenderMode == DefenderMode.Patrol ? "Патруль" : pawn.DefenderMode == DefenderMode.Guard ? "Пост" : "Поиск угроз";
+                moveOrder.GetComponentInChildren<Text>().text = pawn.Role == Profession.Defender && pawn.DefenderMode == DefenderMode.Guard ? "Указать пост" : pawn.OrderedDestination >= 0 ? "Отмена приказа" : "Направить";
+                portrait.color = Palette.Professions[(int)pawn.Role]; caption.text = Names[(int)pawn.Role]; description.text = Descriptions[(int)pawn.Role];
+                details.text = "♥ " + pawn.Health.ToString("0") + "   Сытость " + pawn.Food.ToString("0") + "   Силы " + pawn.Energy.ToString("0") +
+                    "\n" + States[(int)pawn.State] + (pawn.Target >= 0 ? " · цель " + pawn.Target : "") + (pawn.OrderedDestination >= 0 ? " · приказ " + pawn.OrderedDestination : "") + " · груз " + pawn.Cargo.ToString("0");
                 feedback.text = pawn.PendingRole.HasValue ? "На ядре → " + Names[(int)pawn.PendingRole.Value] : pawn.Health <= 0 ? "Погиб" : "";
-                convert.interactable = world.Supports(chosenRole) && pawn.Health > 0 && pawn.Role != chosenRole && pawn.PendingRole != chosenRole && !world.Lost;
+                convert.interactable = pawn.Health > 0 && !world.Lost;
             }
             else
             {
@@ -291,10 +307,17 @@ namespace SimpleColony
                 caption.text = node.Id == World.Home ? "Ядро" : "Территория";
                 description.text = node.Id == World.Home ? "Склад и отдых" : node.Threat > 0 ? "Очаг угрозы" : node.Known ? "Запасы территории" : "Не исследована";
                 details.text = "";
-                if (node.Id == World.Home) details.text = InventorySummary();
+
                 if (node.Known) foreach (var deposit in node.Deposits) details.text += ResourceNames[(int)deposit.Type] + " " + deposit.Amount.ToString("0") + "  ";
+                if (node.Construction != null) details.text = node.Construction.Definition.Name + (node.Construction.Complete ? " · работает" : " · стройка " + (node.Construction.Progress / BuildingDefinition.WorkRequired * 100).ToString("0") + "%");
+                if (node.Fortification > 0) details.text += " · защита " + node.Fortification.ToString("0") + "/30";
                 accessButton.GetComponentInChildren<Text>().text = node.Blocked ? "Открыть доступ" : "Закрыть доступ";
                 feedback.text = "";
+            }
+            if (inspectSelection != null)
+            {
+                pawnActions.SetActive(false); nodeActions.SetActive(false);
+                caption.text = inspectedTitle; description.text = inspectedTitle; details.text = inspectSummary?.Invoke() ?? ""; feedback.text = ""; portrait.color = inspectedColor;
             }
             if (world.Lost) feedback.text = "Колония потеряна · ↻ начать заново";
             diagnosticText.text = "Seed " + world.Seed + "\nВремя " + world.Time.ToString("0") + " с\nТерритории " + world.Nodes.Count + "\nДороги " + world.Edges() + "\nПешки " + world.Pawns.Count + "\nТик " + clock.LastTickMilliseconds.ToString("0.00") + " мс\nПоиски пути " + world.Searches + "\nМасштаб " + map.Zoom.ToString("0") + "\n" + map.InputStatus;
@@ -305,13 +328,76 @@ namespace SimpleColony
                 diagnosticText.text += "\n" + Names[(int)pawn.Role] + " · " + States[(int)pawn.State] + "\nПитание " + pawn.Food.ToString("0") + " · силы " + pawn.Energy.ToString("0") + "\nЗдоровье " + pawn.Health.ToString("0");
             }
         }
-        string InventorySummary()
+        void BeginMoveOrder()
         {
-            string result = "";
-            for (int i = 0; i < Palette.Resources.Length; i++)
-                result += "<color=#" + ColorUtility.ToHtmlStringRGB(Palette.Resources[i]) + ">■</color> " +
-                    world.Stores[(Resource)i].ToString("0") + "   ";
-            return result;
+            if (directingPawn >= 0) { directingPawn = -1; feedback.text = "Выбор цели отменён"; return; }
+            if (world.Pawns[SelectedPawn].OrderedDestination >= 0 && !(world.Pawns[SelectedPawn].Role == Profession.Defender && world.Pawns[SelectedPawn].DefenderMode == DefenderMode.Guard))
+            {
+                world.CancelOrder(SelectedPawn);
+                Refresh();
+                return;
+            }
+            directingPawn = SelectedPawn;
+            feedback.text = "Выбери клетку назначения";
+        }
+        public bool IsDirecting => directingPawn >= 0;
+        public void DirectToNode(int id)
+        {
+            bool success = world.DirectPawn(directingPawn,id);
+            directingPawn = -1;
+            Refresh();
+            feedback.text = success ? "Приказ принят" : "Нет пути или запасов для возвращения";
+        }
+        void Inspect(string title, Color color, Action show, Func<string> summary = null)
+        {
+            descriptionPopup.Close();
+            inspectedTitle = title; inspectedColor = color; inspectSelection = show; inspectSummary = summary;
+            Refresh();
+        }
+        public void InspectResource(Resource resource,int nodeId = -1) => Inspect(ResourceNames[(int)resource], Palette.Resources[(int)resource], () => ShowResourceInfo(resource), () => nodeId < 0 ? "Склад · " + world.Stores[resource].ToString("0.0") : "Территория " + nodeId + " · " + world.Nodes[nodeId].Find(resource).Amount.ToString("0.0") + " / " + world.Nodes[nodeId].Find(resource).Capacity.ToString("0"));
+        public void InspectFortification(int id) => Inspect("Защита " + world.Nodes[id].Fortification.ToString("0") + "/30",Palette.Resources[(int)Resource.Stability],() => ShowInfo("Укрепление территории\n\n" + world.Nodes[id].Fortification.ToString("0.0") + " из 30 защиты.\nВходящее заражение расходует защиту. После её исчерпания возникает очаг. Стабилизатор пополняет защиту эссенцией со склада."));
+        public void InspectThreat(int id) => Inspect("Угроза · узел " + id, Palette.Professions[1], () => ShowThreatInfo(id), () => "Сила очага " + world.Nodes[id].Threat.ToString("0.0") + " · уничтожает ресурсы");
+        public void InspectRoad(int a, int b) => Inspect("Дорога " + a + " — " + b, Color.gray, () => ShowRoadInfo(a,b), () => world.Travel.FoodCost(world.Nodes[a],world.Nodes[b]).ToString("0.0") + " еды · " + world.Travel.EnergyCost(world.Nodes[a],world.Nodes[b]).ToString("0.0") + " сил за переход");
+        public void ShowInfo(string text)
+        {
+            descriptionPopup.Show(null,text,new Vector2(Screen.width*.5f,Screen.height*.5f));
+        }
+        public void ShowResourceInfo(Resource resource)
+        {
+            string[] explanations = {
+                "Питание расходуется на еду пешек, походы, найм и строительство. Собиратели приносят его в ядро.",
+                "Знания нужны для исследований. Исследователь получает их непосредственно на территории.",
+                "Материя нужна для строительства и улучшения транспорта. Её доставляет строитель.",
+                "Заряд со склада ускоряет восстановление истощённого пищевого источника. Его доставляет снабженец.",
+                "Лекарства восстанавливают здоровье на ядре. Медик доставляет их со специальных территорий.",
+                "Эссенцию собирает снабженец и доставляет в ядро. Стабилизатор несёт её на территорию. Одна эссенция создаёт 3 защиты, максимум 30. Заражение сначала расходует защиту."
+            };
+            ShowInfo(ResourceNames[(int)resource]+"\n\n"+explanations[(int)resource]);
+        }
+        public void ShowThreatInfo(int id)
+        {
+            ShowInfo("Очаг угрозы\n\nУзел "+id+" · сила "+world.Nodes[id].Threat.ToString("0.0")+"\nУничтожает запасы и распространяется по дорогам. Защитник подавляет очаг. Стабилизатор сдерживает распространение.");
+        }
+        public void ShowRoadInfo(int a,int b)
+        {
+            ShowInfo("Дорога "+a+" — "+b+"\n\nПереход требует "+world.Travel.FoodCost(world.Nodes[a],world.Nodes[b]).ToString("0.0")+" еды и "+world.Travel.EnergyCost(world.Nodes[a],world.Nodes[b]).ToString("0.0")+" сил.\nЗелёный цвет — дешевле, красный — дороже. Путевой пост снижает расход.");
+        }
+        void ShowSelectedInfo()
+        {
+            if (world == null) return;
+            if (inspectSelection != null) { inspectSelection(); return; }
+            if (SelectedPawn >= 0)
+            {
+                var p=world.Pawns[SelectedPawn];
+                ShowInfo(Names[(int)p.Role]+" №"+(p.Id+1)+"\n"+Descriptions[(int)p.Role]+"\n\n"+States[(int)p.State]+" · узел "+p.At+(p.Next>=0?" → "+p.Next:"")+"\nЗдоровье "+p.Health.ToString("0")+" · еда "+p.Food.ToString("0")+" · силы "+p.Energy.ToString("0")+"\nГруз "+p.Cargo.ToString("0")+"\nСмена профессии выполняется на ядре.");
+            }
+            else
+            {
+                var n=world.Nodes[SelectedNode];
+                string text=SelectedNode==World.Home?"Ядро\nПешки сдают груз, едят, отдыхают и меняют профессию.":"Территория "+SelectedNode+"\n"+(n.Known?"Можно заказать постройку и изменить доступ.":"Требуется разведчик.");
+                if(n.Construction!=null)text+="\n\n"+n.Construction.Definition.Name+"\n"+n.Construction.Definition.Description;
+                ShowInfo(text);
+            }
         }
         void OnDestroy() { if (buttonSkin) Destroy(buttonSkin); if (disc) Destroy(disc); if (discTexture) Destroy(discTexture); }
         RectTransform Panel(Transform parent, string name, Color color)
@@ -332,13 +418,7 @@ namespace SimpleColony
             var image = panel.GetComponent<Image>();
             image.sprite = buttonSkin; image.type = Image.Type.Sliced; image.pixelsPerUnitMultiplier = 3;
             var button = panel.gameObject.AddComponent<Button>(); button.targetGraphic = panel.GetComponent<Image>();
-            HoldDescription hold = null;
-            if (iconSymbol != null || holdText != null || holdDescription != null || title.Length == 1)
-            {
-                hold = panel.gameObject.AddComponent<HoldDescription>();
-                hold.Initialize(descriptionPopup, holdDescription ?? (() => holdText ?? IconDescription(iconSymbol ?? title, title)));
-            }
-            button.onClick.AddListener(() => { if (hold == null || !hold.SuppressClick) action(); });
+            button.onClick.AddListener(action);
             if (title.Length == 1 || iconSymbol != null)
             {
                 var obj = new GameObject("Icon", typeof(RectTransform), typeof(CanvasRenderer), typeof(UiIcon)); obj.transform.SetParent(panel, false);
@@ -382,38 +462,32 @@ namespace SimpleColony
                 map.Zoom = portraitMode ? 40 : 60;
                 layoutReady = true;
             }
-            float headerHeight = portraitMode ? 112 : 64;
-            float bottomHeight = portraitMode ? 230 : 180;
-            float spacing = Mathf.Min(58, (safeArea.rect.width - 16) / professionCards.Length);
-            for (int i = 0; i < professionCards.Length; i++)
-            {
-                var card = professionCards[i];
-                card.anchorMin = card.anchorMax = new Vector2(.5f, 0);
-                card.pivot = new Vector2(.5f, 0);
-                card.anchoredPosition = new Vector2((i - 3.5f) * spacing, 8);
-            }
+            float headerHeight = 112;
+            float bottomHeight = portraitMode ? 180 : 140;
             topPanel.offsetMin = new Vector2(0, -headerHeight);
             selectionPanel.offsetMax = new Vector2(0, bottomHeight);
             colonyControlsRect.anchoredPosition = new Vector2(12, -headerHeight - 16);
-            Place(stocks.rectTransform, 16, -10, 92, 42);
+
             Place(description.rectTransform, 210, -14, portraitMode ? Mathf.Max(100, safeArea.rect.width - 290) : 600, portraitMode ? 44 : 28);
-            Place(details.rectTransform, 210, portraitMode ? -58 : -44, portraitMode ? safeArea.rect.width - 226 : 700, portraitMode ? 48 : 30);
-            Place(convert.GetComponent<RectTransform>(), 210, portraitMode ? -118 : -76, 180, 48);
+            Place(details.rectTransform, 210, portraitMode ? -58 : -40, portraitMode ? safeArea.rect.width - 226 : 700, portraitMode ? 52 : 38);
+            Place(convert.GetComponent<RectTransform>(), 210, portraitMode ? -118 : -76, 100, 32);
+            Place(defenderMode.GetComponent<RectTransform>(),portraitMode ? 320 : 460,portraitMode ? -72 : -76,150,36);
+            Place(buildNodeButton.GetComponent<RectTransform>(), portraitMode ? 320 : 410, portraitMode ? -118 : -76, 136, 42);
             Place(accessButton.GetComponent<RectTransform>(), 210, portraitMode ? -118 : -76, 180, 48);
             Place(feedback.rectTransform, portraitMode ? 12 : 410, portraitMode ? -136 : -88, portraitMode ? 184 : 500, portraitMode ? 36 : 30);
-            PositionMenu(recruitment, portraitMode, true, bottomHeight);
+            PositionMenu(construction, portraitMode, true, bottomHeight);
             PositionMenu(research, portraitMode, true, bottomHeight);
             PositionMenu(workforce, portraitMode, true, bottomHeight);
             PositionMenu(diagnostics, portraitMode, false, bottomHeight);
             if (portraitMode)
             {
-                bool menuOpen = recruitment.activeSelf || research.activeSelf || workforce.activeSelf || diagnostics.activeSelf || help.activeSelf;
+                bool menuOpen = construction.activeSelf || research.activeSelf || workforce.activeSelf || diagnostics.activeSelf || help.activeSelf;
                 mapViewport.offsetMin = new Vector2(88, bottomHeight + (menuOpen ? 374 : 0));
                 mapViewport.offsetMax = new Vector2(0, -headerHeight);
                 return;
             }
             float left = 88;
-            if (recruitment.activeSelf || research.activeSelf || workforce.activeSelf) left = 510;
+            if (construction.activeSelf || research.activeSelf || workforce.activeSelf) left = 510;
             if (help.activeSelf) left = 100 + ((RectTransform)help.transform).rect.width;
             float right = diagnostics.activeSelf ? 434 : 0;
             mapViewport.offsetMin = new Vector2(left, bottomHeight);

@@ -1,16 +1,16 @@
 using System;
-using System.Collections.Generic;
-
 namespace SimpleColony
 {
     public sealed class StabilizationBehavior : IProfessionBehavior
     {
-        public bool CanWork(World world, Node node) => node.Known && node.Threat <= 0 && node.Find(Resource.Stability)?.Amount > 0;
+        public bool CanWork(World world, Node node) => node.Known && node.Threat <= 0 && node.Fortification < Node.MaxFortification && world.HasEssence;
         public bool Work(World world, Pawn pawn, Node node, float dt)
         {
-            var deposit = node.Find(Resource.Stability); deposit.Take(dt * .3f); node.Protect();
-            foreach (int next in node.Links) world.Nodes[next].Protect();
-            return deposit.Amount <= 0;
+            if (pawn.CargoType != Resource.Stability || pawn.Cargo <= 0) return true;
+            float essence = Math.Min(pawn.Cargo, Math.Min(dt * .6f, (Node.MaxFortification - node.Fortification) / 3));
+            pawn.UseCargo(essence);
+            node.Fortify(essence * 3);
+            return pawn.Cargo <= .001f || node.Fortification >= Node.MaxFortification - .001f;
         }
     }
 }

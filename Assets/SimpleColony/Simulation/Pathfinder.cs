@@ -23,7 +23,7 @@ namespace SimpleColony
                 foreach (int next in world.Nodes[current].Links)
                 {
                     var node = world.Nodes[next];
-                    if ((!node.Known && next != goal) || !world.Travel.Accessible(node, defender)) continue;
+                    if ((!defender && !node.Known && next != goal) || !world.Travel.Accessible(node, defender)) continue;
                     float distance = distances[current] + world.Travel.Length(world.Nodes[current], node);
                     if (distance < distances[next]) { distances[next] = distance; previous[next] = current; }
                 }

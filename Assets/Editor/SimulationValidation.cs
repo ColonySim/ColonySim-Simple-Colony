@@ -9,6 +9,7 @@ public static class SimulationValidation
 
     public static void Run()
     {
+        ValidateObjectCommands();
         ValidateModuleConfigurations();
         for (int seed = 0; seed < 30; seed++)
         {
@@ -85,6 +86,67 @@ public static class SimulationValidation
         var food = new Deposit(Resource.Food, 10); var matter = new Deposit(Resource.Matter, 20);
         Require(food.Take(15) == 10 && food.Amount == 0 && matter.Amount == 20, "Independent depletion");
     }
+    static void ValidateObjectCommands()
+    {
+        var world = new World(123,Mechanics.None);
+        float[] before = new float[6];
+        for(int i=0;i<6;i++) before[i]=world.Stores[(Resource)i];
+        world.GrantDebugResources();
+        for(int i=0;i<6;i++) Require(world.Stores[(Resource)i]==before[i]+1000,"Debug resources grant");
+        Require(world.Construction.Build(1,BuildingType.Quarry),"Construction order");
+        float matter=world.Stores[Resource.Matter];
+        Require(!world.Construction.Build(1,BuildingType.Quarry)&&world.Stores[Resource.Matter]==matter,"Duplicate construction payment");
+        Require(world.Convert(0,Profession.Builder),"Assign builder");world.Step();
+        SetFixtureProperty(world.Pawns[0],"At",1);
+        for(int tick=0;tick<170;tick++)world.Step();
+        Require(world.Nodes[1].Construction.Complete&&world.Nodes[1].Find(Resource.Matter)!=null,"Builder completes and changes territory");
+        var mover=world.Pawns[1];
+        Require(world.DirectPawn(mover.Id,2),"Direct move order");
+        for(int tick=0;tick<1000&&mover.At!=2;tick++)world.Step();
+        Require(mover.At==2&&mover.OrderedDestination==2,"Direct order reaches destination");
+        world.ToggleAccess(2);world.Step();
+        Require(mover.Next>=0&&mover.OrderedDestination==-1,"Closed territory evacuation: next="+mover.Next+" order="+mover.OrderedDestination+" energy="+mover.Energy+" food="+mover.Food+" blocked="+world.Nodes[2].Blocked);
+        for(int tick=0;tick<1000&&mover.At!=World.Home;tick++)world.Step();
+        Require(mover.At==World.Home,"Evacuation reaches core");
+        var fortified=new World(123);
+        fortified.GrantDebugResources();
+        var target=fortified.Nodes[1];
+        foreach(var node in fortified.Nodes)SetFixtureProperty(node,"Threat",0f);
+        Require(fortified.Convert(0,Profession.Stabilizer),"Assign stabilizer");fortified.Step();
+        var stabilizer=fortified.Pawns[0];
+        Require(stabilizer.Cargo>0&&stabilizer.CargoType==Resource.Stability,"Stabilizer loads essence");
+        SetFixtureProperty(stabilizer,"Next",-1);SetFixtureProperty(stabilizer,"At",1);
+        for(int tick=0;tick<50;tick++)fortified.Step();
+        Require(target.Fortification>0,"Essence becomes fortification");
+        float protection=target.Fortification;
+        typeof(Node).GetMethod("Infect",System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic).Invoke(target,new object[]{1f});
+        Require(target.Threat==0&&target.Fortification<protection,"Fortification absorbs infection");
+        var combat=new World(12);
+        foreach(var node in combat.Nodes)SetFixtureProperty(node,"Threat",0f);
+        var defender=combat.Pawns[3];
+        SetFixtureProperty(defender,"At",1);SetFixtureProperty(combat.Nodes[1],"Threat",.05f);
+        combat.Step();combat.Step();
+        SetFixtureProperty(combat.Nodes[2],"Threat",1f);combat.Step();
+        Require(defender.Target==2,"Defender searches again after victory");
+        Require(combat.SetDefenderMode(3,DefenderMode.Patrol)&&defender.OrderedDestination<0,"Patrol mode");
+        Require(combat.SetDefenderMode(3,DefenderMode.Guard),"Guard mode");
+        Require(combat.DirectPawn(3,2),"Assign post");
+        SetFixtureProperty(defender,"Next",-1);SetFixtureProperty(defender,"At",2);SetFixtureProperty(defender,"Food",20f);
+        combat.Step();Require(defender.OrderedDestination==2,"Post survives supply trip");
+        bool visitedHome = false, returnedToPost = false;
+        for(int tick=0;tick<2000;tick++)
+        {
+            combat.Step();
+            visitedHome |= defender.At == World.Home;
+            if(visitedHome && defender.At==2 && defender.Next<0) { returnedToPost = true; break; }
+        }
+        Require(returnedToPost,"Guard returns to assigned post after eating");
+        int empty=0;var distribution=new World(444,Mechanics.None);
+        for(int i=0;i<100;i++)if(!distribution.Nodes[i].Known)distribution.Discover(i);
+        foreach(var node in distribution.Nodes)if(node.Deposits.Count==0)empty++;
+        Require(empty>distribution.Nodes.Count*.4f,"World has empty land for construction");
+    }
+
     static void ValidateModuleConfigurations()
     {
         foreach (Mechanics selection in new[] { Mechanics.None, Mechanics.Threats, Mechanics.Research, Mechanics.All })

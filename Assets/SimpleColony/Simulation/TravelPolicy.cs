@@ -10,8 +10,8 @@ namespace SimpleColony
         internal void ImproveTransportation(float bonus = .02f) { SpeedMultiplier += bonus; }
         public float Length(Node a, Node b)
         { float x = a.X - b.X, y = a.Y - b.Y; return (float)Math.Sqrt(x * x + y * y); }
-        public float FoodCost(Node a, Node b) => Length(a, b) * .6f * FoodMultiplier;
-        public float EnergyCost(Node a, Node b) => Length(a, b) * 5;
+        public float FoodCost(Node a, Node b) => Length(a, b) * .6f * FoodMultiplier * (a.HasWaystation || b.HasWaystation ? .7f : 1);
+        public float EnergyCost(Node a, Node b) => Length(a, b) * 5 * (a.HasWaystation || b.HasWaystation ? .7f : 1);
         public bool Accessible(Node node, bool defender) => defender || (!node.Blocked && node.Threat <= 0);
     }
 }

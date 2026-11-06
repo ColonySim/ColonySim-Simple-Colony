@@ -59,11 +59,6 @@ namespace SimpleColony
                         var deposit = node.Deposits[i];
                         float gap = node.Deposits.Count == 1 ? 0 : 6;
                         float start = i * sector + gap / 2, span = sector - gap;
-                        if (deposit.Amount > 0)
-                        {
-                            float offset = (i - (node.Deposits.Count - 1) * .5f) * 9;
-                            Square(mesh, position + Vector2.right * offset, 2.8f, Palette.Resources[(int)deposit.Type]);
-                        }
                         Arc(mesh, position, 22, 26, start, span, new Color(.25f, .28f, .32f));
                         Arc(mesh, position, 22, 26, start, span * deposit.Amount / deposit.Capacity, Palette.Resources[(int)deposit.Type]);
                     }
@@ -75,8 +70,18 @@ namespace SimpleColony
                     Line(mesh, position + Vector2.up * 10, position + Vector2.right * 11, 3, Color.white);
                     Line(mesh, position + Vector2.down * 8, position + Vector2.up * 5, 5, Color.white);
                 }
+                if (node.Construction != null)
+                {
+                    Color tint = node.Construction.Complete ? Color.white : new Color(1,.65f,.25f);
+                    Line(mesh,position+new Vector2(-8,-5),position+new Vector2(-8,5),2,tint);
+                    Line(mesh,position+new Vector2(-8,5),position+new Vector2(0,11),2,tint);
+                    Line(mesh,position+new Vector2(0,11),position+new Vector2(8,5),2,tint);
+                    Line(mesh,position+new Vector2(8,5),position+new Vector2(8,-5),2,tint);
+                    Line(mesh,position+new Vector2(-8,-5),position+new Vector2(8,-5),2,tint);
+                }
                 if (!node.Known) Circle(mesh, position, 3, Color.gray);
                 if (node.Blocked) Line(mesh, position + new Vector2(-10, -10), position + new Vector2(10, 10), 3, Color.gray);
+                if (node.Fortification > 0) Arc(mesh,position,33,36,0,360 * node.Fortification / Node.MaxFortification,Palette.Resources[(int)Resource.Stability]);
                 if (node.Shield > 0) Arc(mesh, position, 33, 35, 0, 360, Palette.Resources[5]);
                 // Frontier threats remain visible even before surveying the territory.
                 if (node.Threat > 0)
@@ -106,6 +111,27 @@ namespace SimpleColony
         {
             if (dragged || pinchDistance > 0 || !Owner.MapInteractive) return;
             RectTransformUtility.ScreenPointToLocalPointInRectangle(rectTransform, data.position, data.pressEventCamera, out Vector2 point);
+            if (Owner.IsDirecting)
+            {
+                foreach (var node in World.Nodes)
+                    if (Visible(node) && Vector2.Distance(point, Position(node)) < 34 * ObjectScale) { Owner.DirectToNode(node.Id); return; }
+                return;
+            }
+            foreach (var node in World.Nodes)
+            {
+                Vector2 center = Position(node);
+                if (node.Threat > 0 && Vector2.Distance(point,center + new Vector2(22,23)*ObjectScale) < 14*ObjectScale)
+                { Owner.InspectThreat(node.Id); return; }
+                float radius = Vector2.Distance(point,center) / ObjectScale;
+                if (node.Fortification > 0 && radius >= 32 && radius <= 39) { Owner.InspectFortification(node.Id); return; }
+                if (node.Known && radius >= 20 && radius <= 31 && node.Deposits.Count > 0)
+                {
+                    Vector2 delta = point-center;
+                    float angle = (Mathf.Atan2(delta.x,delta.y)*Mathf.Rad2Deg + 360)%360;
+                    int index = Mathf.Min(node.Deposits.Count-1,Mathf.FloorToInt(angle/(360f/node.Deposits.Count)));
+                    Owner.InspectResource(node.Deposits[index].Type,node.Id); return;
+                }
+            }
             foreach (var pawn in World.Pawns)
                 if (pawn.Health > 0 && Vector2.Distance(point, Position(pawn)) < 14 * ObjectScale) { Owner.SelectPawn(pawn.Id); return; }
             foreach (var node in World.Nodes)
