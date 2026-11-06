@@ -52,7 +52,7 @@ namespace SimpleColony
         Profession chosenRole;
         public int SelectedNode { get; private set; }
         public int SelectedPawn { get; private set; } = -1;
-        public bool MapInteractive => map != null && map.isActiveAndEnabled;
+        public bool MapInteractive => map != null && map.isActiveAndEnabled && (help == null || !help.activeSelf);
         static readonly string[] Names = { "Собиратель", "Защитник", "Разведчик", "Исследователь", "Строитель", "Снабженец", "Медик", "Стабилизатор", "Безработный" };
         static readonly string[] Descriptions = { "Доставляет питание", "Подавляет угрозы", "Открывает территории", "Получает знания", "Доставляет материю", "Доставляет заряд и эссенцию", "Доставляет лекарства", "Несёт эссенцию и укрепляет территории", "Ожидает назначения профессии" };
         static readonly string[] ResourceNames = { "Питание", "Знания", "Материя", "Заряд", "Лекарства", "Эссенция" };
@@ -147,7 +147,7 @@ namespace SimpleColony
                 Place(chip.GetComponentInChildren<UiIcon>().rectTransform, 4,-10,18,18);
                 stockAmounts.Add(Label(chip.transform,"",24,-4,34,30,13));
             }
-            Button(top, "?", -96, -8, 40, 44, () => TogglePanel(help), true);
+            Button(top, "?", -96, -8, 40, 44, () => { TogglePanel(help); if(help.activeSelf)help.GetComponent<HelpPanel>().OpenArticle("root",true); }, true);
             Button(top, "…", -48, -8, 40, 44, () => TogglePanel(diagnostics), true);
             var bottom = Panel(safeArea, "Selection", new Color(.065f, .095f, .13f)); Anchor(bottom, Vector2.zero, new Vector2(1, 0), Vector2.zero, new Vector2(0, 140));
             selectionPanel = bottom;
@@ -197,7 +197,7 @@ namespace SimpleColony
                 researchButtons.Add(button);
             }
             workforce = Overlay("Workforce", "");
-            workforce.AddComponent<WorkforcePanel>().Initialize(font, () => world, Names, profession => ShowInfo(Names[(int)profession]+"\n\n"+Descriptions[(int)profession]));
+            workforce.AddComponent<WorkforcePanel>().Initialize(font, () => world, Names, profession => ShowArticle(WikiCatalog.ProfessionId(profession)));
             construction = Overlay("Construction", "");
             for (int i = 0; i < BuildingDefinition.All.Count; i++)
             {
@@ -207,7 +207,7 @@ namespace SimpleColony
                     feedback.text = world.Construction.Build(SelectedNode,definition.Type) ? "Заказ ожидает строителя" : "Стройка недоступна";
                     construction.SetActive(false); Refresh();
                 }, holdText: definition.Description);
-                Button(construction.transform,"?",338,-60-i*85,42,42,() => ShowInfo(definition.Name+"\n\n"+definition.Description+"\nНужен строитель. Цена — "+definition.FoodCost+" еды и "+definition.MatterCost+" материи."));
+                Button(construction.transform,"?",338,-60-i*85,42,42,() => ShowArticle(WikiCatalog.BuildingId(definition.Type)));
                 buildButtons.Add(build);
                 Label(construction.transform,definition.FoodCost+" еды · "+definition.MatterCost+" материи",20,-108-i*85,360,26,15);
             }
@@ -370,49 +370,51 @@ namespace SimpleColony
             Refresh();
         }
         public void InspectResource(Resource resource,int nodeId = -1) => Inspect(ResourceNames[(int)resource], Palette.Resources[(int)resource], () => ShowResourceInfo(resource), () => nodeId < 0 ? "Склад · " + world.Stores[resource].ToString("0.0") : "Территория " + nodeId + " · " + world.Nodes[nodeId].Find(resource).Amount.ToString("0.0") + " / " + world.Nodes[nodeId].Find(resource).Capacity.ToString("0"));
-        public void InspectFortification(int id) => Inspect("Защита " + world.Nodes[id].Fortification.ToString("0") + "/30",Palette.Resources[(int)Resource.Stability],() => ShowInfo("Укрепление территории\n\n" + world.Nodes[id].Fortification.ToString("0.0") + " из 30 защиты.\nВходящее заражение расходует защиту. После её исчерпания возникает очаг. Стабилизатор пополняет защиту эссенцией со склада."));
+        public void InspectFortification(int id) => Inspect("Защита " + world.Nodes[id].Fortification.ToString("0") + "/30",Palette.Resources[(int)Resource.Stability],() => ShowArticle("mechanics/fortification",world.Nodes[id].Fortification.ToString("0.0")+" из 30 защиты"),()=>world.Nodes[id].Fortification.ToString("0.0")+" из 30 защиты");
         public void InspectThreat(int id) => Inspect("Угроза · узел " + id, Palette.Professions[1], () => ShowThreatInfo(id), () => "Сила очага " + world.Nodes[id].Threat.ToString("0.0") + " · уничтожает ресурсы");
         public void InspectRoad(int a, int b) => Inspect("Дорога " + a + " — " + b, Color.gray, () => ShowRoadInfo(a,b), () => world.Travel.FoodCost(world.Nodes[a],world.Nodes[b]).ToString("0.0") + " еды · " + world.Travel.EnergyCost(world.Nodes[a],world.Nodes[b]).ToString("0.0") + " сил за переход");
         public void ShowInfo(string text)
         {
             descriptionPopup.Show(null,text,new Vector2(Screen.width*.5f,Screen.height*.5f));
         }
+        void OpenWiki(string id)
+        {
+            descriptionPopup.Close();
+            if(!help.activeSelf)TogglePanel(help);
+            help.GetComponent<HelpPanel>().OpenArticle(id,true);
+            help.transform.SetAsLastSibling();
+        }
+        void ShowArticle(string id,string liveDetails=null)
+        {
+            descriptionPopup.ShowArticle(id,liveDetails,OpenWiki);
+        }
         public void ShowResourceInfo(Resource resource)
         {
-            string[] explanations = {
-                "Питание расходуется на еду пешек, походы, найм и строительство. Собиратели приносят его в ядро.",
-                "Знания нужны для исследований. Исследователь получает их непосредственно на территории.",
-                "Материя расходуется на заказанные постройки. Её доставляет строитель.",
-                "Заряд со склада ускоряет восстановление истощённого пищевого источника. Его доставляет снабженец.",
-                "Лекарства восстанавливают здоровье на ядре. Медик доставляет их со специальных территорий.",
-                "Эссенцию собирает снабженец и доставляет в ядро. Стабилизатор несёт её на территорию. Одна эссенция создаёт 3 защиты, максимум 30. Заражение сначала расходует защиту."
-            };
-            ShowInfo(ResourceNames[(int)resource]+"\n\n"+explanations[(int)resource]);
+            ShowArticle(WikiCatalog.ResourceId(resource),inspectSummary?.Invoke());
         }
         public void ShowThreatInfo(int id)
         {
-            ShowInfo("Очаг угрозы\n\nУзел "+id+" · сила "+world.Nodes[id].Threat.ToString("0.0")+"\nУничтожает запасы и распространяется по дорогам. Защитник подавляет очаг. Стабилизатор сдерживает распространение.");
+            ShowArticle("objects/threat","Узел "+id+" · сила "+world.Nodes[id].Threat.ToString("0.0"));
         }
         public void ShowRoadInfo(int a,int b)
         {
-            ShowInfo("Дорога "+a+" — "+b+"\n\nПереход требует "+world.Travel.FoodCost(world.Nodes[a],world.Nodes[b]).ToString("0.0")+" еды и "+world.Travel.EnergyCost(world.Nodes[a],world.Nodes[b]).ToString("0.0")+" сил.\nЗелёный цвет — дешевле, красный — дороже. Путевой пост снижает расход.");
+            ShowArticle("objects/road","Дорога "+a+" — "+b+"\n"+world.Travel.FoodCost(world.Nodes[a],world.Nodes[b]).ToString("0.0")+" еды и "+world.Travel.EnergyCost(world.Nodes[a],world.Nodes[b]).ToString("0.0")+" сил за переход");
         }
         void ShowSelectedInfo()
         {
-            if (world == null) return;
-            if (inspectSelection != null) { inspectSelection(); return; }
-            if (SelectedPawn >= 0)
+            if(world==null)return;
+            if(inspectSelection!=null){inspectSelection();return;}
+            if(SelectedPawn>=0)
             {
-                var p=world.Pawns[SelectedPawn];
-                ShowInfo(Names[(int)p.Role]+" №"+(p.Id+1)+"\n"+Descriptions[(int)p.Role]+"\n\n"+States[(int)p.State]+" · узел "+p.At+(p.Next>=0?" → "+p.Next:"")+"\nЗдоровье "+p.Health.ToString("0")+" · еда "+p.Food.ToString("0")+" · силы "+p.Energy.ToString("0")+"\nГруз "+p.Cargo.ToString("0")+"\nСмена профессии выполняется на ядре.");
+                var pawn=world.Pawns[SelectedPawn];
+                ShowArticle(WikiCatalog.ProfessionId(pawn.Role),"Пешка №"+(pawn.Id+1)+" · "+States[(int)pawn.State]+"\nЗдоровье "+pawn.Health.ToString("0")+" · сытость "+pawn.Food.ToString("0")+" · силы "+pawn.Energy.ToString("0")+"\nГруз "+pawn.Cargo.ToString("0"));
+                return;
             }
-            else
-            {
-                var n=world.Nodes[SelectedNode];
-                string text=SelectedNode==World.Home?"Ядро\nПешки сдают груз, едят, отдыхают и меняют профессию.":"Территория "+SelectedNode+"\n"+(n.Known?"Можно заказать постройку и изменить доступ.":"Требуется разведчик.");
-                if(n.Construction!=null)text+="\n\n"+n.Construction.Definition.Name+"\n"+n.Construction.Definition.Description;
-                ShowInfo(text);
-            }
+            var node=world.Nodes[SelectedNode];
+            string article=node.Construction!=null?WikiCatalog.BuildingId(node.Construction.Definition.Type):node.Id==World.Home?"objects/core":"objects/node";
+            string state="Узел "+node.Id+" · "+(node.Known?"исследован":"не исследован");
+            if(node.Construction!=null)state+="\n"+(node.Construction.Complete?"Постройка работает":"Постройка · "+(node.Construction.Progress/BuildingDefinition.WorkRequired*100).ToString("0")+"%");
+            ShowArticle(article,state);
         }
         void OnDestroy() { if (buttonSkin) Destroy(buttonSkin); if (disc) Destroy(disc); if (discTexture) Destroy(discTexture); }
         RectTransform Panel(Transform parent, string name, Color color)

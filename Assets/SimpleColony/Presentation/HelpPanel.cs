@@ -1,99 +1,129 @@
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
-
 namespace SimpleColony
 {
     public sealed class HelpPanel : MonoBehaviour
     {
         RectTransform panel, content;
-        GridLayoutGroup grid;
-        public void Initialize(RectTransform parent, Font font, DescriptionPopup descriptions)
+        Text heading;
+        Font font;
+        ScrollRect scroll;
+        Button back;
+        string current = "root";
+        readonly Stack<string> history = new Stack<string>();
+        readonly List<GameObject> rows = new List<GameObject>();
+        float renderedWidth;
+        public void Initialize(RectTransform parent,Font font,DescriptionPopup descriptions)
         {
-            transform.SetParent(parent, false);
-            panel = (RectTransform)transform;
-            panel.anchorMin = panel.anchorMax = panel.pivot = new Vector2(0, 1);
-            panel.anchoredPosition = new Vector2(88, -72);
-            gameObject.AddComponent<Image>().color = new Color(.08f, .115f, .15f);
-            var close = new GameObject("Close", typeof(RectTransform), typeof(Image), typeof(Button));
-            close.transform.SetParent(transform, false);
-            var closeRect = (RectTransform)close.transform;
-            closeRect.anchorMin = closeRect.anchorMax = Vector2.one; closeRect.pivot = Vector2.one;
-            closeRect.anchoredPosition = new Vector2(-8, -8); closeRect.sizeDelta = new Vector2(48, 48);
-            close.GetComponent<Image>().color = new Color(.13f, .2f, .26f);
-            close.GetComponent<Button>().onClick.AddListener(() => gameObject.SetActive(false));
-            Icon(close.transform, "×", Color.white, new Vector2(.5f, .5f), Vector2.zero);
-
-            var viewportObject = new GameObject("Viewport", typeof(RectTransform), typeof(Image), typeof(RectMask2D));
-            viewportObject.transform.SetParent(transform, false);
-            viewportObject.GetComponent<Image>().color = Color.clear;
-            var viewport = (RectTransform)viewportObject.transform;
-            viewport.anchorMin = Vector2.zero; viewport.anchorMax = Vector2.one;
-            viewport.offsetMin = new Vector2(12, 12); viewport.offsetMax = new Vector2(-12, -64);
-            var contentObject = new GameObject("Legend", typeof(RectTransform), typeof(GridLayoutGroup));
-            contentObject.transform.SetParent(viewport, false); content = (RectTransform)contentObject.transform;
-            content.anchorMin = new Vector2(0, 1); content.anchorMax = Vector2.one; content.pivot = new Vector2(.5f, 1);
-            content.offsetMin = content.offsetMax = Vector2.zero;
-            grid = contentObject.GetComponent<GridLayoutGroup>(); grid.spacing = new Vector2(8, 8); grid.constraint = GridLayoutGroup.Constraint.FixedColumnCount;
-            var scroll = viewportObject.AddComponent<ScrollRect>(); scroll.viewport = viewport; scroll.content = content;
-            scroll.horizontal = false; scroll.movementType = ScrollRect.MovementType.Clamped;
-
-            string[] icons = { "food", "research", "matter", "charge", "medicine", "shield", "pawn", "cargo", "ring", "road", "threat", "⌂", "pan", "zoom", "hire" };
-            string[] labels = { "Питание", "Знания", "Материя", "Заряд", "Лекарства", "Защита", "Пешка", "Груз", "Остаток", "Цена пути", "Угроза", "Смена роли", "Перемещение", "Масштаб", "Найм" };
-            string[] explanations = {
-                "Питание пополняется на ядре и расходуется на жизнь и переходы.",
-                "Исследователи добывают знания. На них покупаются улучшения колонии.",
-                "Материя расходуется на заказанные постройки.",
-                "Заряд со склада восстанавливает запас питания на территории.",
-                "Лекарства восстанавливают здоровье пешек на ядре.",
-                "Снабженец приносит эссенцию в ядро. Стабилизатор доставляет её на узлы и создаёт до 30 защиты.",
-                "Круг — пешка. Касание выбирает объект и показывает состояние в нижней панели.",
-                "Квадрат рядом с пешкой — переносимый ресурс.",
-                "Цветные секторы кольца показывают остатки ресурсов территории.",
-                "Цвет дороги показывает расход питания. Зелёная дешевле, красная дороже.",
-                "Угрозы появляются в наиболее удалённых от ядра узлах. Защитники подавляют очаги.",
-                "Назначенная смена профессии выполняется после возвращения пешки на ядро.",
-                "Для перемещения карты зажмите мышь или палец и потяните.",
-                "Масштаб меняется колесом мыши или разведением двух пальцев.",
-                "Найм доступен на левой панели управления колонией. Цена — 25 питания."
-            };
-            for (int i = 0; i < icons.Length; i++)
-            {
-                var tile = new GameObject(labels[i], typeof(RectTransform), typeof(Image), typeof(HoldDescription)); tile.transform.SetParent(content, false);
-                tile.GetComponent<Image>().color = Color.clear;
-                string explanation = explanations[i];
-                tile.GetComponent<HoldDescription>().Initialize(descriptions, () => explanation);
-                Icon(tile.transform, icons[i], i < 6 ? Palette.Resources[i] : new Color(.8f, .9f, 1), new Vector2(.5f, 1), new Vector2(0, -24));
-                var labelObject = new GameObject("Label", typeof(RectTransform), typeof(Text)); labelObject.transform.SetParent(tile.transform, false);
-                var label = labelObject.GetComponent<Text>(); label.font = font; label.fontSize = 17; label.text = labels[i];
-                label.alignment = TextAnchor.MiddleCenter; label.color = Color.white; label.raycastTarget = false;
-                var rect = label.rectTransform; rect.anchorMin = Vector2.zero; rect.anchorMax = new Vector2(1, 0);
-                rect.pivot = new Vector2(.5f, 0); rect.anchoredPosition = Vector2.zero; rect.sizeDelta = new Vector2(0, 28);
-            }
-            Resize();
+            this.font=font;
+            transform.SetParent(parent,false);
+            panel=(RectTransform)transform;
+            panel.anchorMin=panel.anchorMax=panel.pivot=new Vector2(.5f,.5f);
+            gameObject.AddComponent<Image>().color=new Color(.06f,.095f,.13f);
+            back=CreateButton(transform,"‹",Back);
+            Place((RectTransform)back.transform,12,12,40,44);
+            var home=CreateButton(transform,"Справочник",()=>OpenArticle("root",true));
+            Place((RectTransform)home.transform,60,12,180,44);
+            var close=CreateButton(transform,"×",()=>gameObject.SetActive(false));
+            var closeRect=(RectTransform)close.transform;
+            closeRect.anchorMin=closeRect.anchorMax=closeRect.pivot=new Vector2(1,1);
+            closeRect.anchoredPosition=new Vector2(-12,-12);closeRect.sizeDelta=new Vector2(40,44);
+            heading=CreateText(transform,"",20);
+            Place(heading.rectTransform,16,64,300,58);
+            var viewport=new GameObject("Article viewport",typeof(RectTransform),typeof(Image),typeof(RectMask2D),typeof(ScrollRect));
+            viewport.transform.SetParent(transform,false);
+            viewport.GetComponent<Image>().color=Color.clear;
+            var rect=(RectTransform)viewport.transform;
+            rect.anchorMin=Vector2.zero;rect.anchorMax=Vector2.one;rect.offsetMin=new Vector2(16,16);rect.offsetMax=new Vector2(-16,-128);
+            content=new GameObject("Article content",typeof(RectTransform)).GetComponent<RectTransform>();content.SetParent(viewport.transform,false);
+            content.anchorMin=new Vector2(0,1);content.anchorMax=Vector2.one;content.pivot=new Vector2(.5f,1);content.offsetMin=content.offsetMax=Vector2.zero;
+            scroll=viewport.GetComponent<ScrollRect>();scroll.viewport=rect;scroll.content=content;scroll.horizontal=false;scroll.movementType=ScrollRect.MovementType.Clamped;
+            Resize(); Render();
         }
-        static void Icon(Transform parent, string symbol, Color color, Vector2 anchor, Vector2 offset)
+        public void OpenArticle(string id,bool resetHistory=false)
         {
-            var obj = new GameObject("Icon", typeof(RectTransform), typeof(CanvasRenderer), typeof(UiIcon)); obj.transform.SetParent(parent, false);
-            var icon = obj.GetComponent<UiIcon>(); icon.Symbol = symbol; icon.color = color; icon.raycastTarget = false;
-            var rect = icon.rectTransform; rect.anchorMin = rect.anchorMax = anchor; rect.pivot = new Vector2(.5f, .5f);
-            rect.anchoredPosition = offset; rect.sizeDelta = new Vector2(32, 32);
+            WikiCatalog.Get(id);
+            if(resetHistory)history.Clear();
+            else if(current!=id)history.Push(current);
+            current=id;Render();
         }
-        void OnEnable() { if (panel != null) Resize(); }
+        void Back()
+        {
+            if(history.Count>0)current=history.Pop();
+            else current=WikiCatalog.Get(current).ParentId??"root";
+            Render();
+        }
+        void OnEnable() { if(panel!=null){Resize();Render();} }
         void Update() { Resize(); }
         void Resize()
         {
-            var parent = (RectTransform)panel.parent;
-            bool portrait = Screen.height > Screen.width;
-            panel.anchorMin = panel.anchorMax = panel.pivot = portrait ? new Vector2(.5f, 0) : new Vector2(0, 1);
-            panel.anchoredPosition = portrait ? new Vector2(0, 192) : new Vector2(88, -72);
-            float width = portrait ? Mathf.Min(410, parent.rect.width - 24) : Mathf.Min(410, parent.rect.width * .4f);
-            float height = portrait ? 350 : Mathf.Min(500, parent.rect.height - 228);
-            panel.sizeDelta = new Vector2(width, height);
-            int columns = width >= 460 ? 3 : 2;
-            grid.constraintCount = columns;
-            grid.cellSize = new Vector2((width - 24 - (columns - 1) * 8) / columns, 76);
-            int rows = Mathf.CeilToInt(content.childCount / (float)columns);
-            content.sizeDelta = new Vector2(0, rows * 84 - 8);
+            var parent=(RectTransform)transform.parent;
+            float width=Mathf.Min(640,parent.rect.width-24);
+            panel.sizeDelta=new Vector2(width,Mathf.Max(240,parent.rect.height-24));
+            panel.anchoredPosition=Vector2.zero;
+            heading.rectTransform.sizeDelta=new Vector2(width-32,58);
+            if(Mathf.Abs(renderedWidth-width)>1)Render();
+        }
+        void Render()
+        {
+            if(content==null)return;
+            foreach(var row in rows){row.SetActive(false);Destroy(row);}rows.Clear();
+            var article=WikiCatalog.Get(current);
+            heading.text=article.ParentId==null?article.Title:WikiCatalog.Get(article.ParentId).Title+" / "+article.Title;
+            back.interactable=current!="root"||history.Count>0;
+            float width=panel.rect.width-32;
+            renderedWidth=panel.rect.width;
+            float y=0;
+            var body=CreateText(content,article.Body,17);
+            Place(body.rectTransform,0,0,width,1);
+            float height=body.preferredHeight+8;
+            body.rectTransform.sizeDelta=new Vector2(width,height);
+            rows.Add(body.gameObject);y+=height+12;
+            var links=new HashSet<string>();
+            foreach(var child in WikiCatalog.Children(current))
+            {
+                Link(child.Id,width,ref y);links.Add(child.Id);
+            }
+            bool labelAdded=false;
+            foreach(string related in article.Related)
+            {
+                if(links.Contains(related))continue;
+                if(!labelAdded)
+                {
+                    var label=CreateText(content,"Связанные темы",15);label.color=new Color(.55f,.7f,.77f);
+                    Place(label.rectTransform,0,y+8,width,30);rows.Add(label.gameObject);y+=46;labelAdded=true;
+                }
+                Link(related,width,ref y);links.Add(related);
+            }
+            content.sizeDelta=new Vector2(0,y);
+            content.anchoredPosition=Vector2.zero;
+            scroll.verticalNormalizedPosition=1;
+        }
+        void Link(string id,float width,ref float y)
+        {
+            var button=CreateButton(content,WikiCatalog.Get(id).Title+"  ›",()=>OpenArticle(id));
+            Place((RectTransform)button.transform,0,y,width,52);
+            rows.Add(button.gameObject);y+=60;
+        }
+        Text CreateText(Transform parent,string value,int size)
+        {
+            var obj=new GameObject("Text",typeof(RectTransform),typeof(Text));obj.transform.SetParent(parent,false);
+            var text=obj.GetComponent<Text>();text.font=font;text.fontSize=size;text.text=value;text.color=new Color(.88f,.94f,.97f);text.raycastTarget=false;text.verticalOverflow=VerticalWrapMode.Overflow;
+            return text;
+        }
+        Button CreateButton(Transform parent,string title,UnityEngine.Events.UnityAction action)
+        {
+            var obj=new GameObject(title,typeof(RectTransform),typeof(Image),typeof(Button));obj.transform.SetParent(parent,false);
+            var image=obj.GetComponent<Image>();image.color=new Color(.12f,.19f,.24f);
+            var button=obj.GetComponent<Button>();button.targetGraphic=image;button.onClick.AddListener(action);
+            var label=CreateText(obj.transform,title,17);label.alignment=TextAnchor.MiddleCenter;
+            label.rectTransform.anchorMin=Vector2.zero;label.rectTransform.anchorMax=Vector2.one;label.rectTransform.offsetMin=new Vector2(8,0);label.rectTransform.offsetMax=new Vector2(-8,0);
+            return button;
+        }
+        static void Place(RectTransform rect,float x,float y,float width,float height)
+        {
+            rect.anchorMin=rect.anchorMax=rect.pivot=new Vector2(0,1);rect.anchoredPosition=new Vector2(x,-y);rect.sizeDelta=new Vector2(width,height);
         }
     }
 }
