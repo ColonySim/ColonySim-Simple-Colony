@@ -6,7 +6,7 @@ namespace SimpleColony
         float accumulator;
         public float LastTickMilliseconds { get; private set; }
         public void Reset() { accumulator = 0; }
-        public int Advance(World world, float elapsed, int speed, bool paused)
+        public int Advance(World world, float elapsed, float speed, bool paused)
         {
             int executedTicks = 0;
             if (!paused && !world.Lost)

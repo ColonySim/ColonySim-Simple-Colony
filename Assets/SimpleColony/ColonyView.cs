@@ -12,7 +12,9 @@ namespace SimpleColony
         GameObject construction;
         readonly System.Collections.Generic.List<Button> buildButtons = new System.Collections.Generic.List<Button>();
         readonly System.Collections.Generic.List<Text> stockAmounts = new System.Collections.Generic.List<Text>();
-        Button researchMenu, buildNodeButton;
+        Button researchMenu, buildNodeButton, speedDown, speedUp;
+        Button inspectButton;
+        RectTransform actionRail;
         int directingPawn = -1;
         Action inspectSelection;
         Func<string> inspectSummary;
@@ -45,8 +47,8 @@ namespace SimpleColony
         float refresh;
         bool paused;
         // Zero selects unrestricted simulation within the per-frame CPU budget.
-        static readonly int[] Speeds = { 1, 2, 5, 10, 25, 50, 100, 0 };
-        int speedIndex;
+        static readonly float[] Speeds = { .25f, .5f, 1, 2, 5, 10, 25, 50, 100, 0 };
+        int speedIndex = 2;
         Profession chosenRole;
         public int SelectedNode { get; private set; }
         public int SelectedPawn { get; private set; } = -1;
@@ -125,11 +127,13 @@ namespace SimpleColony
             var top = Panel(safeArea, "Session", new Color(.065f, .095f, .13f)); Anchor(top, new Vector2(0, 1), new Vector2(1, 1), new Vector2(0, -64), Vector2.zero);
             topPanel = top;
             var sessionBar = Panel(top, "Playback", Color.clear);
-            sessionBar.anchorMin = sessionBar.anchorMax = sessionBar.pivot = new Vector2(.5f,1);
-            sessionBar.sizeDelta = new Vector2(210,64); sessionBar.anchoredPosition = Vector2.zero;
-            playIcon = Button(sessionBar, "▶", 12, -7, 54, 50, () => { paused = !paused; Refresh(); }).GetComponentInChildren<UiIcon>();
-            speedText = Button(sessionBar, "×1", 74, -7, 64, 50, () => { speedIndex = (speedIndex + 1) % Speeds.Length; clock.Reset(); Refresh(); }, holdText: "Скорость симуляции. MAX — максимально возможная в пределах времени кадра.").GetComponentInChildren<Text>();
-            Button(sessionBar, "↻", 146, -7, 54, 50, () => Restart(SessionSeed.Create()));
+            sessionBar.anchorMin = sessionBar.anchorMax = sessionBar.pivot = new Vector2(0,1);
+            sessionBar.sizeDelta = new Vector2(220,60); sessionBar.anchoredPosition = new Vector2(12,0);
+            playIcon = Button(sessionBar,"▶",0,-8,40,44,() => { paused = !paused; Refresh(); }).GetComponentInChildren<UiIcon>();
+            speedDown = Button(sessionBar,"−",44,-8,40,44,() => ChangeSpeed(-1));
+            speedText = Label(sessionBar,"×1",84,-8,48,44,17); speedText.alignment = TextAnchor.MiddleCenter;
+            speedUp = Button(sessionBar,"+",132,-8,40,44,() => ChangeSpeed(1));
+            Button(sessionBar,"↻",176,-8,40,44,() => Restart(SessionSeed.Create()));
             string[] resourceIcons = { "food", "research", "matter", "charge", "medicine", "ring" };
             var stockRow = Panel(top, "Inventory", Color.clear);
             stockRow.anchorMin = new Vector2(0,1); stockRow.anchorMax = new Vector2(1,1); stockRow.pivot = new Vector2(0,1);
@@ -140,29 +144,31 @@ namespace SimpleColony
                 Resource resource = (Resource)i;
                 var chip = Button(stockRow, "Resource", 0, 0, 68, 36, () => InspectResource(resource), iconSymbol: resourceIcons[i]);
                 chip.GetComponentInChildren<UiIcon>().color = Palette.Resources[i];
-                Place(chip.GetComponentInChildren<UiIcon>().rectTransform, 4,-7,22,22);
-                stockAmounts.Add(Label(chip.transform,"",29,-3,52,30,16));
+                Place(chip.GetComponentInChildren<UiIcon>().rectTransform, 4,-10,18,18);
+                stockAmounts.Add(Label(chip.transform,"",24,-4,34,30,13));
             }
-            Button(top, "?", -118, -7, 48, 50, () => TogglePanel(help), true);
-            Button(top, "…", -60, -7, 48, 50, () => TogglePanel(diagnostics), true);
+            Button(top, "?", -96, -8, 40, 44, () => TogglePanel(help), true);
+            Button(top, "…", -48, -8, 40, 44, () => TogglePanel(diagnostics), true);
             var bottom = Panel(safeArea, "Selection", new Color(.065f, .095f, .13f)); Anchor(bottom, Vector2.zero, new Vector2(1, 0), Vector2.zero, new Vector2(0, 140));
             selectionPanel = bottom;
             portrait = Panel(bottom, "Portrait", Color.white).GetComponent<Image>(); portrait.sprite = disc; Place(portrait.rectTransform, 70, -14, 56, 56);
             caption = Label(bottom, "", 8, -82, 180, 42, 17); caption.alignment = TextAnchor.UpperCenter;
             description = Label(bottom, "", 210, -14, 600, 28, 19);
             details = Label(bottom, "", 210, -44, 700, 30, 16);
-            pawnActions = new GameObject("Profession actions", typeof(RectTransform)); pawnActions.transform.SetParent(bottom, false); Stretch((RectTransform)pawnActions.transform);
-            convert = Button(pawnActions.transform, "Работа →", 210, -76, 100, 32, CycleProfession);
-            moveOrder = Button(pawnActions.transform,"Направить",320,-76,125,36,BeginMoveOrder);
-            defenderMode = Button(pawnActions.transform,"Режим",460,-76,150,36,() =>
+            actionRail = Panel(safeArea,"Object actions",Color.clear);
+            actionRail.GetComponent<Image>().raycastTarget = false;
+            pawnActions = new GameObject("Profession actions", typeof(RectTransform)); pawnActions.transform.SetParent(actionRail, false); Stretch((RectTransform)pawnActions.transform);
+            convert = ActionButton(pawnActions.transform,"cycle",CycleProfession,() => "Назначить следующую профессию. Смена выполняется на ядре.");
+            moveOrder = ActionButton(pawnActions.transform,"pan",BeginMoveOrder,() => SelectedPawn >= 0 && world.Pawns[SelectedPawn].OrderedDestination >= 0 ? "Отменить приказ или указать новое место поста." : "Направить пешку. Затем выберите открытую клетку.");
+            defenderMode = ActionButton(pawnActions.transform,"shield",() =>
             {
                 var pawn = world.Pawns[SelectedPawn];
                 world.SetDefenderMode(SelectedPawn,(DefenderMode)(((int)pawn.DefenderMode+1)%3)); Refresh();
-            });
-            nodeActions = new GameObject("Territory actions", typeof(RectTransform)); nodeActions.transform.SetParent(bottom, false); Stretch((RectTransform)nodeActions.transform);
-            accessButton = Button(nodeActions.transform, "Доступ", 210, -76, 180, 48, () => { world.ToggleAccess(SelectedNode); Refresh(); });
-            Button(bottom, "?", -64,-14,44,40,ShowSelectedInfo,true);
-            buildNodeButton = Button(nodeActions.transform, "Строить", 410,-76,136,42,() => TogglePanel(construction));
+            },() => "Сменить режим воина. Поиск угроз → патруль → пост. Текущий режим указан внизу.");
+            nodeActions = new GameObject("Territory actions", typeof(RectTransform)); nodeActions.transform.SetParent(actionRail, false); Stretch((RectTransform)nodeActions.transform);
+            accessButton = ActionButton(nodeActions.transform,"lock",() => { world.ToggleAccess(SelectedNode); Refresh(); },() => world.Nodes[SelectedNode].Blocked ? "Открыть территорию для работы и прохода." : "Закрыть территорию. Пешки покинут её и вернутся в ядро.");
+            inspectButton = ActionButton(actionRail,"?",ShowSelectedInfo,() => "Подробная информация о выбранном объекте.");
+            buildNodeButton = ActionButton(nodeActions.transform,"build",() => TogglePanel(construction),() => "Постройки территории. Выберите проект, материалы спишутся со склада. Работу выполняет строитель.");
             feedback = Label(bottom, "", 410, -88, 500, 30, 16);
             coreActions = new GameObject("Colony controls", typeof(RectTransform)); coreActions.transform.SetParent(safeArea, false);
             var colonyRect = (RectTransform)coreActions.transform;
@@ -251,7 +257,7 @@ namespace SimpleColony
             directingPawn = -1;
             sessionSeed = seed;
             world = new World(seed, sessionMechanics);
-            speedIndex = 0;
+            speedIndex = 2;
             map.World = world; clock.Reset(); paused = false;
             statistics.Reset();
             researchMenu.gameObject.SetActive((sessionMechanics & Mechanics.Research) != 0);
@@ -259,6 +265,7 @@ namespace SimpleColony
             if (construction != null) construction.SetActive(false);
             workforce.SetActive(false);
             feedback.text = ""; SelectNode(World.Home);
+            Canvas.ForceUpdateCanvases(); map.FitToVisible();
         }
         void Update()
         {
@@ -271,12 +278,18 @@ namespace SimpleColony
             refresh += Time.unscaledDeltaTime;
             if (refresh > .2f) { refresh = 0; Refresh(); }
         }
+        void ChangeSpeed(int direction)
+        {
+            speedIndex = Mathf.Clamp(speedIndex + direction,0,Speeds.Length-1);
+            clock.Reset(); Refresh();
+        }
         void Refresh()
         {
             if (world == null) return;
             ApplyMapLayout();
             playIcon.Symbol = paused ? "▶" : "Ⅱ"; playIcon.SetVerticesDirty();
-            speedText.text = Speeds[speedIndex] == 0 ? "MAX" : "×" + Speeds[speedIndex];
+            speedText.text = Speeds[speedIndex] == 0 ? "MAX" : "×" + Speeds[speedIndex].ToString("0.##");
+            speedDown.interactable = speedIndex > 0; speedUp.interactable = speedIndex < Speeds.Length-1;
             for (int i = 0; i < researchButtons.Count; i++)
             {
                 var technology = ResearchProgress.Definitions[i];
@@ -293,11 +306,11 @@ namespace SimpleColony
             {
                 var pawn = world.Pawns[SelectedPawn];
                 defenderMode.gameObject.SetActive(pawn.Role == Profession.Defender);
-                defenderMode.GetComponentInChildren<Text>().text = pawn.DefenderMode == DefenderMode.Patrol ? "Патруль" : pawn.DefenderMode == DefenderMode.Guard ? "Пост" : "Поиск угроз";
-                moveOrder.GetComponentInChildren<Text>().text = pawn.Role == Profession.Defender && pawn.DefenderMode == DefenderMode.Guard ? "Указать пост" : pawn.OrderedDestination >= 0 ? "Отмена приказа" : "Направить";
+                SetActionIcon(defenderMode,pawn.DefenderMode == DefenderMode.Patrol ? "patrol" : pawn.DefenderMode == DefenderMode.Guard ? "post" : "threat");
+                SetActionIcon(moveOrder,pawn.Role == Profession.Defender && pawn.DefenderMode == DefenderMode.Guard ? "post" : pawn.OrderedDestination >= 0 ? "×" : "pan");
                 portrait.color = Palette.Professions[(int)pawn.Role]; caption.text = Names[(int)pawn.Role]; description.text = Descriptions[(int)pawn.Role];
                 details.text = "♥ " + pawn.Health.ToString("0") + "   Сытость " + pawn.Food.ToString("0") + "   Силы " + pawn.Energy.ToString("0") +
-                    "\n" + States[(int)pawn.State] + (pawn.Target >= 0 ? " · цель " + pawn.Target : "") + (pawn.OrderedDestination >= 0 ? " · приказ " + pawn.OrderedDestination : "") + " · груз " + pawn.Cargo.ToString("0");
+                    "\n" + States[(int)pawn.State] + (pawn.Target >= 0 ? " · цель " + pawn.Target : "") + (pawn.OrderedDestination >= 0 ? " · приказ " + pawn.OrderedDestination : "") + " · груз " + pawn.Cargo.ToString("0") + (pawn.Role == Profession.Defender ? "\nРежим: " + (pawn.DefenderMode == DefenderMode.Patrol ? "Патруль" : pawn.DefenderMode == DefenderMode.Guard ? "Пост" : "Поиск угроз") : "");
                 feedback.text = pawn.PendingRole.HasValue ? "На ядре → " + Names[(int)pawn.PendingRole.Value] : pawn.Health <= 0 ? "Погиб" : "";
                 convert.interactable = pawn.Health > 0 && !world.Lost;
             }
@@ -311,7 +324,9 @@ namespace SimpleColony
                 if (node.Known) foreach (var deposit in node.Deposits) details.text += ResourceNames[(int)deposit.Type] + " " + deposit.Amount.ToString("0") + "  ";
                 if (node.Construction != null) details.text = node.Construction.Definition.Name + (node.Construction.Complete ? " · работает" : " · стройка " + (node.Construction.Progress / BuildingDefinition.WorkRequired * 100).ToString("0") + "%");
                 if (node.Fortification > 0) details.text += " · защита " + node.Fortification.ToString("0") + "/30";
-                accessButton.GetComponentInChildren<Text>().text = node.Blocked ? "Открыть доступ" : "Закрыть доступ";
+                SetActionIcon(accessButton,node.Blocked ? "unlock" : "lock");
+                details.text += "\nДоступ: " + (node.Blocked ? "закрыт" : "открыт");
+                buildNodeButton.gameObject.SetActive(node.Construction == null);
                 feedback.text = "";
             }
             if (inspectSelection != null)
@@ -418,7 +433,13 @@ namespace SimpleColony
             var image = panel.GetComponent<Image>();
             image.sprite = buttonSkin; image.type = Image.Type.Sliced; image.pixelsPerUnitMultiplier = 3;
             var button = panel.gameObject.AddComponent<Button>(); button.targetGraphic = panel.GetComponent<Image>();
-            button.onClick.AddListener(action);
+            HoldDescription hold = null;
+            if (holdDescription != null || holdText != null)
+            {
+                hold = panel.gameObject.AddComponent<HoldDescription>();
+                hold.Initialize(descriptionPopup,holdDescription ?? (() => holdText));
+            }
+            button.onClick.AddListener(() => { if (hold == null || !hold.SuppressClick) action(); });
             if (title.Length == 1 || iconSymbol != null)
             {
                 var obj = new GameObject("Icon", typeof(RectTransform), typeof(CanvasRenderer), typeof(UiIcon)); obj.transform.SetParent(panel, false);
@@ -427,9 +448,19 @@ namespace SimpleColony
             }
             else
             {
-                var text = Label(panel, title, 0, 0, width, height, 21); text.alignment = TextAnchor.MiddleCenter;
+                var text = Label(panel, title, 0, 0, width, height, 21); text.alignment = TextAnchor.MiddleCenter; text.resizeTextForBestFit = true; text.resizeTextMinSize = 12; text.resizeTextMaxSize = 18;
             }
             return button;
+        }
+        Button ActionButton(Transform parent,string icon,UnityEngine.Events.UnityAction callback,Func<string> explanation)
+        {
+            return Button(parent,"Action",0,0,44,44,callback,iconSymbol:icon,holdDescription:explanation);
+        }
+        static void SetActionIcon(Button button,string symbol)
+        {
+            var icon = button.GetComponentInChildren<UiIcon>();
+            if (icon.Symbol == symbol) return;
+            icon.Symbol = symbol; icon.SetVerticesDirty();
         }
         static void Place(RectTransform rect, float x, float y, float width, float height)
         { rect.anchorMin = rect.anchorMax = new Vector2(0, 1); rect.pivot = new Vector2(0, 1); rect.anchoredPosition = new Vector2(x, y); rect.sizeDelta = new Vector2(width, height); }
@@ -454,44 +485,47 @@ namespace SimpleColony
         void ApplyMapLayout()
         {
             bool portraitMode = Screen.height > Screen.width;
-            if (!layoutReady || portraitMode != portraitLayout)
+            bool changed = !layoutReady || portraitMode != portraitLayout;
+            if (changed)
             {
                 portraitLayout = portraitMode;
-                canvasScaler.referenceResolution = portraitMode ? new Vector2(480, 800) : new Vector2(1000, 650);
+                canvasScaler.screenMatchMode = CanvasScaler.ScreenMatchMode.MatchWidthOrHeight;
+                canvasScaler.matchWidthOrHeight = portraitMode ? 0 : 1;
+                canvasScaler.referenceResolution = portraitMode ? new Vector2(360,780) : new Vector2(1000,650);
                 map.Pan = Vector2.zero;
                 map.Zoom = portraitMode ? 40 : 60;
                 layoutReady = true;
+                Canvas.ForceUpdateCanvases();
             }
             float headerHeight = 112;
-            float bottomHeight = portraitMode ? 180 : 140;
+            float bottomHeight = portraitMode ? 180 : 150;
             topPanel.offsetMin = new Vector2(0, -headerHeight);
             selectionPanel.offsetMax = new Vector2(0, bottomHeight);
             colonyControlsRect.anchoredPosition = new Vector2(12, -headerHeight - 16);
 
-            Place(description.rectTransform, 210, -14, portraitMode ? Mathf.Max(100, safeArea.rect.width - 290) : 600, portraitMode ? 44 : 28);
-            Place(details.rectTransform, 210, portraitMode ? -58 : -40, portraitMode ? safeArea.rect.width - 226 : 700, portraitMode ? 52 : 38);
-            Place(convert.GetComponent<RectTransform>(), 210, portraitMode ? -118 : -76, 100, 32);
-            Place(defenderMode.GetComponent<RectTransform>(),portraitMode ? 320 : 460,portraitMode ? -72 : -76,150,36);
-            Place(buildNodeButton.GetComponent<RectTransform>(), portraitMode ? 320 : 410, portraitMode ? -118 : -76, 136, 42);
-            Place(accessButton.GetComponent<RectTransform>(), 210, portraitMode ? -118 : -76, 180, 48);
-            Place(feedback.rectTransform, portraitMode ? 12 : 410, portraitMode ? -136 : -88, portraitMode ? 184 : 500, portraitMode ? 36 : 30);
+            float width = safeArea.rect.width;
+            Place(portrait.rectTransform,16,-16,48,48);
+            Place(caption.rectTransform,4,-70,80,40); caption.fontSize = 14;
+            Place(description.rectTransform,84,-16,width-140,28); description.fontSize = 18;
+            Place(details.rectTransform,84,-48,width-100,portraitMode?96:70); details.fontSize = 15;
+            float actionsY = portraitMode ? -120 : -96;
+            actionRail.anchorMin = actionRail.anchorMax = actionRail.pivot = new Vector2(1,1);
+            actionRail.anchoredPosition = new Vector2(-12,-headerHeight-16);
+            actionRail.sizeDelta = new Vector2(44,260);
+            int slot = 0;
+            foreach (var actionButton in new[] { inspectButton,convert,moveOrder,defenderMode,accessButton,buildNodeButton })
+            {
+                if (!actionButton.gameObject.activeInHierarchy) continue;
+                Place(actionButton.GetComponent<RectTransform>(),0,-slot*54,44,44); slot++;
+            }
+            Place(feedback.rectTransform,12,portraitMode?-146:-120,width-24,28); feedback.fontSize = 13;
             PositionMenu(construction, portraitMode, true, bottomHeight);
             PositionMenu(research, portraitMode, true, bottomHeight);
             PositionMenu(workforce, portraitMode, true, bottomHeight);
             PositionMenu(diagnostics, portraitMode, false, bottomHeight);
-            if (portraitMode)
-            {
-                bool menuOpen = construction.activeSelf || research.activeSelf || workforce.activeSelf || diagnostics.activeSelf || help.activeSelf;
-                mapViewport.offsetMin = new Vector2(88, bottomHeight + (menuOpen ? 374 : 0));
-                mapViewport.offsetMax = new Vector2(0, -headerHeight);
-                return;
-            }
-            float left = 88;
-            if (construction.activeSelf || research.activeSelf || workforce.activeSelf) left = 510;
-            if (help.activeSelf) left = 100 + ((RectTransform)help.transform).rect.width;
-            float right = diagnostics.activeSelf ? 434 : 0;
-            mapViewport.offsetMin = new Vector2(left, bottomHeight);
-            mapViewport.offsetMax = new Vector2(-right, -headerHeight);
+            mapViewport.offsetMin = new Vector2(0,bottomHeight);
+            mapViewport.offsetMax = new Vector2(0,-headerHeight);
+            if (changed) { Canvas.ForceUpdateCanvases(); map.FitToVisible(); }
         }
         static void PositionMenu(GameObject menu, bool portraitMode, bool left, float bottomHeight)
         {
@@ -499,7 +533,11 @@ namespace SimpleColony
             Vector2 anchor = portraitMode ? new Vector2(.5f, 0) : new Vector2(left ? 0 : 1, 1);
             rect.anchorMin = rect.anchorMax = rect.pivot = anchor;
             rect.anchoredPosition = portraitMode ? new Vector2(0, bottomHeight + 12) : new Vector2(left ? 88 : -12, -72);
-            rect.sizeDelta = new Vector2(410, portraitMode ? 350 : 390);
+            float availableWidth = ((RectTransform)menu.transform.parent).rect.width - 24;
+            float scale = Mathf.Min(1,availableWidth/410);
+            rect.localScale = Vector3.one * scale;
+            float availableHeight = ((RectTransform)menu.transform.parent).rect.height - bottomHeight - 136;
+            rect.sizeDelta = new Vector2(410,Mathf.Min(390,Mathf.Max(340,availableHeight/scale)));
         }
     }
 }

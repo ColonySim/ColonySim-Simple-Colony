@@ -13,6 +13,14 @@ namespace SimpleColony
             mesh.Clear();
             switch (Symbol)
             {
+                case "−": Path(mesh,5,12,19,12); break;
+                case "+": Path(mesh,5,12,19,12); Path(mesh,12,5,12,19); break;
+                case "cycle": Ring(mesh,12,12,7,30,300); Path(mesh,16,3,20,6,15,7); break;
+                case "build": Path(mesh,4,20,15,9); Path(mesh,10,4,15,2,22,9,18,13,10,4); break;
+                case "post": Path(mesh,6,22,6,3,20,3,17,9,6,9); break;
+                case "patrol": Ring(mesh,12,12,8,0,290); Path(mesh,3,3,3,9,9,9); break;
+                case "lock": Ring(mesh,12,9,5,270,180); Path(mesh,5,10,19,10,19,21,5,21,5,10); break;
+                case "unlock": Path(mesh,9,10,9,6,12,3,17,3,20,6); Path(mesh,5,10,19,10,19,21,5,21,5,10); break;
                 case "pawn": MapGraphic.Circle(mesh, Point(12, 12), 7, color); break;
                 case "cargo": MapGraphic.Square(mesh, Point(12, 12), 6, color); break;
                 case "ring": Ring(mesh, 12, 12, 8, 0, 290); break;

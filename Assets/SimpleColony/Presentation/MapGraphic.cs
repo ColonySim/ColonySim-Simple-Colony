@@ -177,6 +177,22 @@ namespace SimpleColony
             RectTransformUtility.ScreenPointToLocalPointInRectangle(rectTransform, data.position, data.enterEventCamera, out Vector2 point);
             Scale(Mathf.Exp(data.scrollDelta.y * .1f), point);
         }
+        public void FitToVisible()
+        {
+            if (World == null || World.Nodes.Count == 0) return;
+            Vector2 low = Vector2.zero, high = Vector2.zero;
+            foreach (var node in World.Nodes)
+            {
+                if (!Visible(node)) continue;
+                low = Vector2.Min(low,new Vector2(node.X,node.Y));
+                high = Vector2.Max(high,new Vector2(node.X,node.Y));
+            }
+            var available = rectTransform.rect.size - Vector2.one * 32;
+            var span = high-low+Vector2.one*1.4f;
+            Zoom = Mathf.Clamp(Mathf.Min(available.x/span.x,available.y/span.y),18,90);
+            Pan = -(low+high)*.5f*Zoom;
+            SetVerticesDirty();
+        }
         public void Scale(float factor, Vector2 pivot)
         { float next = Mathf.Clamp(Zoom * factor, 18, 180); Pan = pivot - (pivot - Pan) * (next / Zoom); Zoom = next; SetVerticesDirty(); }
         void Update()

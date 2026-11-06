@@ -11,6 +11,17 @@ public static class InterfaceValidation
     {
         var map = UnityEngine.Object.FindAnyObjectByType<MapGraphic>();
         if (map == null || !map.Owner.MapInteractive) throw new InvalidOperationException("Start Play and close overlay panels first.");
+        Canvas.ForceUpdateCanvases();
+        var canvas = map.GetComponentInParent<Canvas>();
+        var corners = new Vector3[4];
+        foreach (var button in canvas.GetComponentsInChildren<UnityEngine.UI.Button>())
+        {
+            if (!button.gameObject.activeInHierarchy) continue;
+            ((RectTransform)button.transform).GetWorldCorners(corners);
+            foreach (var corner in corners)
+                if (corner.x < Screen.safeArea.xMin - 2 || corner.x > Screen.safeArea.xMax + 2 || corner.y < Screen.safeArea.yMin - 2 || corner.y > Screen.safeArea.yMax + 2)
+                    throw new InvalidOperationException("Button outside safe area: " + button.name);
+        }
         Vector2 savedPan = map.Pan;
         float savedZoom = map.Zoom;
         int selectedPawn = map.Owner.SelectedPawn, selectedNode = map.Owner.SelectedNode;
