@@ -6,7 +6,8 @@ namespace SimpleColony
     public sealed class World
     {
         public const int Home = 0;
-        readonly WorldGraph graph;
+        public PawnModel Population { get; }
+        readonly IWorldGraph graph;
         readonly JobCoordinator jobs;
         readonly List<MechanicModule> modules = new List<MechanicModule>();
         readonly ResearchModule researchModule;
@@ -36,13 +37,14 @@ namespace SimpleColony
         public float DefensePower => 1 + .5f * Research.Level(ResearchType.Defense);
         public const int RecruitCost = 25;
         public const int ResearchCost = 15;
-        public bool CanRecruit => !Lost && pawns.Count < 60 && Stores[Resource.Food] >= RecruitCost;
+        public bool CanRecruit => !Lost && pawns.Count < 60 && Stores[Resource.Food] >= Population.Price;
         public bool CanResearch => CanResearchTechnology(ResearchType.Transport);
         public bool CanResearchTechnology(ResearchType type) => researchModule != null && !Lost && Research.CanPurchase(type, Stores);
         public string Event { get; private set; } = "Колония основана";
-        public World(int seed, Mechanics mechanics = Mechanics.All, IRandomSource randomSource = null)
+        public World(int seed, Mechanics mechanics = Mechanics.All, IRandomSource randomSource = null, PawnModel population = null, Func<IRandomSource, IWorldGraph> generate = null)
         {
             if ((mechanics & ~Mechanics.All) != 0) throw new ArgumentOutOfRangeException(nameof(mechanics));
+            Population = population ?? new SimplePawnModel();
             EnabledMechanics = mechanics;
             Construction = new ConstructionService(this);
             Seed = seed; random = randomSource ?? new SeededRandomSource(seed); pathfinder = new Pathfinder(this);
@@ -52,7 +54,7 @@ namespace SimpleColony
                 { Profession.Builder, new BuildingBehavior() }, { Profession.Supplier, new SupplyGatheringBehavior() },
                 { Profession.Medic, new GatheringBehavior(Resource.Medicine) }
             };
-            graph = new WorldGraph(random);
+            graph = generate == null ? new WorldGraph(random) : generate(random);
             jobs = new JobCoordinator(this, pathfinder, behaviors);
             if ((mechanics & Mechanics.Threats) != 0) modules.Add(new ThreatModule(random));
             if ((mechanics & Mechanics.Research) != 0)
@@ -65,7 +67,15 @@ namespace SimpleColony
             AddPawn(Profession.Gatherer); AddPawn(Profession.Gatherer); AddPawn(Profession.Scout); AddPawn((mechanics & Mechanics.Threats) != 0 ? Profession.Defender : Profession.Unemployed);
             foreach (var module in modules) module.Install(this);
         }
-        void AddPawn(Profession role) { pawns.Add(new Pawn(pawns.Count, role)); }
+        void AddPawn(Profession role) { pawns.Add(new Pawn(pawns.Count, role, Population.AtBirth(Seed, pawns.Count))); }
+        public bool SetWorkPriority(int pawnId, Profession role, int? priority)
+        {
+            if (Lost || pawnId < 0 || pawnId >= pawns.Count || role == Profession.Unemployed || !Supports(role)) return false;
+            var pawn = pawns[pawnId];
+            if (pawn.Health <= 0 || pawn.Skills == null || priority < 0 || priority > 5) return false;
+            pawn.SetPriority(role, priority);
+            return true;
+        }
         public void GrantDebugResources()
         {
             foreach (Resource resource in Enum.GetValues(typeof(Resource))) Stores.Add(resource,1000);
@@ -88,7 +98,7 @@ namespace SimpleColony
         public bool Recruit(Profession role)
         {
             if (!CanRecruit || !Supports(role)) return false;
-            if (!Stores.Spend(Resource.Food, RecruitCost)) return false;
+            if (!Stores.Spend(Resource.Food, Population.Price)) return false;
             AddPawn(role);
             return true;
         }
@@ -174,7 +184,7 @@ namespace SimpleColony
         }
         public bool Convert(int pawnId, Profession role)
         {
-            if (Lost || pawnId < 0 || pawnId >= pawns.Count || !Supports(role)) return false;
+            if (Population.AutomaticWork || Lost || pawnId < 0 || pawnId >= pawns.Count || !Supports(role)) return false;
             var pawn = pawns[pawnId];
             if (pawn.Health <= 0 || (pawn.PendingRole ?? pawn.Role) == role) return false;
             pawn.ConvertTo(role);
@@ -189,7 +199,7 @@ namespace SimpleColony
         }
         public bool AdjustProfession(Profession role, int change)
         {
-            if (Lost || role == Profession.Unemployed || !Supports(role) || (change != 1 && change != 3 && change != -1)) return false;
+            if (Population.AutomaticWork || Lost || role == Profession.Unemployed || !Supports(role) || (change != 1 && change != 3 && change != -1)) return false;
             Profession source = change > 0 ? Profession.Unemployed : role;
             var candidates = pawns.FindAll(p => p.Health > 0 && (p.PendingRole ?? p.Role) == source);
             int requested = Math.Abs(change);

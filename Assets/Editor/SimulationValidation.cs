@@ -9,6 +9,7 @@ public static class SimulationValidation
 
     public static void Run()
     {
+        ValidateSkilledPopulation();
         ValidateObjectCommands();
         ValidateModuleConfigurations();
         for (int seed = 0; seed < 30; seed++)
@@ -86,6 +87,28 @@ public static class SimulationValidation
         var food = new Deposit(Resource.Food, 10); var matter = new Deposit(Resource.Matter, 20);
         Require(food.Take(15) == 10 && food.Amount == 0 && matter.Amount == 20, "Independent depletion");
     }
+    static void ValidateSkilledPopulation()
+    {
+        var world = new World(42, Mechanics.All, population: new SkilledPawnModel());
+        var other = new World(42, Mechanics.All, population: new SkilledPawnModel());
+        var pawn = world.Pawns[0];
+        Require(new World(42).Pawns[0].Skills == null, "Simple pawn model");
+        for (int i = 0; i < 8; i++)
+        {
+            var role = (Profession)i;
+            Require(pawn.Skills.Level(role) == other.Pawns[0].Skills.Level(role), "Birth skills must replay");
+            Require(pawn.Skills.WorkRate(role) > 1 && pawn.Skills.Priority(role) == (pawn.Skills.Level(role)+1)/2, "Skill effects");
+            Require(world.SetWorkPriority(0,role,role == Profession.Researcher ? 5 : 0), "Personal priority");
+        }
+        world.Step();
+        Require(pawn.Role == Profession.Researcher && pawn.Target >= 0, "Highest enabled available work");
+        for (int i = 0; i < 1000 && world.Stores[Resource.Knowledge] == 0; i++) world.Step();
+        Require(world.Stores[Resource.Knowledge] > 0, "Skilled work actually produces knowledge");
+        Require(world.SetWorkPriority(0,Profession.Researcher,null) && pawn.Skills.IsAutomatic(Profession.Researcher), "Restore automatic priority");
+        float food = world.Stores[Resource.Food];
+        Require(world.Recruit(Profession.Unemployed) && world.Pawns[4].Skills != null && Math.Abs(food-world.Stores[Resource.Food]-50) < .001f, "Skilled recruitment");
+    }
+
     static void ValidateObjectCommands()
     {
         var world = new World(123,Mechanics.None);

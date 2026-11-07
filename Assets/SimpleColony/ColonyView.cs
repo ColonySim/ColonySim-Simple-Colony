@@ -8,7 +8,7 @@ namespace SimpleColony
 {
     public sealed class ColonyView : MonoBehaviour
     {
-        [SerializeField] Mechanics sessionMechanics = Mechanics.All;
+        Mechanics sessionMechanics;
         GameObject construction;
         readonly System.Collections.Generic.List<Button> buildButtons = new System.Collections.Generic.List<Button>();
         readonly System.Collections.Generic.List<Text> stockAmounts = new System.Collections.Generic.List<Text>();
@@ -21,6 +21,9 @@ namespace SimpleColony
         string inspectedTitle;
         Color inspectedColor;
         Button moveOrder, defenderMode;
+        GameObject priorityMenu;
+        readonly Text[] priorityRows = new Text[8];
+        readonly Button[] priorityButtons = new Button[8];
         Sprite buttonSkin;
         World world;
         [SerializeField] GameObject generatedInterface, generatedInput;
@@ -58,9 +61,6 @@ namespace SimpleColony
         static readonly string[] ResourceNames = { "Питание", "Знания", "Материя", "Заряд", "Лекарства", "Эссенция" };
         static readonly string[] States = { "Ожидает работу", "В пути", "Работает", "Восстанавливается", "Погиб", "На посту" };
 
-        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
-        static void Boot()
-        { if (FindAnyObjectByType<ColonyView>() == null) new GameObject("Colony").AddComponent<ColonyView>(); }
         void Awake()
         { InitializeSession(); }
         void OnEnable()
@@ -158,7 +158,7 @@ namespace SimpleColony
             actionRail = Panel(safeArea,"Object actions",Color.clear);
             actionRail.GetComponent<Image>().raycastTarget = false;
             pawnActions = new GameObject("Profession actions", typeof(RectTransform)); pawnActions.transform.SetParent(actionRail, false); Stretch((RectTransform)pawnActions.transform);
-            convert = ActionButton(pawnActions.transform,"cycle",CycleProfession,() => "Назначить следующую профессию. Смена выполняется на ядре.");
+            convert = ActionButton(pawnActions.transform,"cycle",CycleProfession,() => world.Pawns[SelectedPawn].Skills == null ? "Назначить следующую профессию на ядре." : "Навыки и приоритеты этой пешки.");
             moveOrder = ActionButton(pawnActions.transform,"pan",BeginMoveOrder,() => SelectedPawn >= 0 && world.Pawns[SelectedPawn].OrderedDestination >= 0 ? "Отменить приказ или указать новое место поста." : "Направить пешку. Затем выберите открытую клетку.");
             defenderMode = ActionButton(pawnActions.transform,"shield",() =>
             {
@@ -196,6 +196,15 @@ namespace SimpleColony
                 var price = Label(research.transform, "", x, y - 96, 120, 24, 16); price.color = Palette.Resources[(int)Resource.Knowledge]; researchPrices.Add(price);
                 researchButtons.Add(button);
             }
+            priorityMenu = Overlay("Приоритеты", "");
+            Label(priorityMenu.transform,"Навык / 10   ·   приоритет 0–5",12,-10,325,30,16);
+            for (int i = 0; i < 8; i++)
+            {
+                var role = (Profession)i;
+                var row = Button(priorityMenu.transform, Names[i], 12, -50 - 41*i, 386, 38, () => AdvancePriority(role));
+                priorityRows[i] = row.GetComponentInChildren<Text>();
+                priorityButtons[i] = row;
+            }
             workforce = Overlay("Workforce", "");
             workforce.AddComponent<WorkforcePanel>().Initialize(font, () => world, Names, profession => ShowArticle(WikiCatalog.ProfessionId(profession)));
             construction = Overlay("Construction", "");
@@ -229,13 +238,14 @@ namespace SimpleColony
             help.SetActive(false);
             diagnostics.SetActive(false);
             if (construction != null) construction.SetActive(false);
+            priorityMenu.SetActive(false);
             research.SetActive(false);
             workforce.SetActive(false);
             panel.SetActive(show);
             Refresh();
         }
-        public void SelectPawn(int id) { descriptionPopup.Close(); inspectSelection = null; SelectedPawn = id; chosenRole = world.Pawns[id].Role; Refresh(); }
-        public void SelectNode(int id) { descriptionPopup.Close(); inspectSelection = null; SelectedPawn = -1; SelectedNode = id; Refresh(); }
+        public void SelectPawn(int id) { priorityMenu.SetActive(false); descriptionPopup.Close(); inspectSelection = null; SelectedPawn = id; chosenRole = world.Pawns[id].Role; Refresh(); }
+        public void SelectNode(int id) { priorityMenu.SetActive(false); descriptionPopup.Close(); inspectSelection = null; SelectedPawn = -1; SelectedNode = id; Refresh(); }
         Profession NextProfession(Profession current, int direction)
         {
             do
@@ -244,9 +254,18 @@ namespace SimpleColony
             } while (!world.Supports(current));
             return current;
         }
+        void AdvancePriority(Profession role)
+        {
+            var skills = world.Pawns[SelectedPawn].Skills;
+            int? next = skills.IsAutomatic(role) ? 0 : skills.Priority(role) == 5 ? (int?)null : skills.Priority(role) + 1;
+            world.SetWorkPriority(SelectedPawn, role, next);
+            Refresh();
+        }
+
         void CycleProfession()
         {
             var pawn = world.Pawns[SelectedPawn];
+            if (pawn.Skills != null) { TogglePanel(priorityMenu); Refresh(); return; }
             chosenRole = NextProfession(pawn.PendingRole ?? pawn.Role,1);
             world.Convert(SelectedPawn,chosenRole);
             Refresh();
@@ -256,7 +275,8 @@ namespace SimpleColony
             inspectSelection = null;
             directingPawn = -1;
             sessionSeed = seed;
-            world = new World(seed, sessionMechanics);
+            world = GetComponent<SimulationAssembly>().Running.CreateWorld(seed);
+            sessionMechanics = world.EnabledMechanics;
             speedIndex = 2;
             map.World = world; clock.Reset(); paused = false;
             statistics.Reset();
@@ -312,6 +332,19 @@ namespace SimpleColony
                 details.text = "♥ " + pawn.Health.ToString("0") + "   Сытость " + pawn.Food.ToString("0") + "   Силы " + pawn.Energy.ToString("0") +
                     "\n" + States[(int)pawn.State] + (pawn.Target >= 0 ? " · цель " + pawn.Target : "") + (pawn.OrderedDestination >= 0 ? " · приказ " + pawn.OrderedDestination : "") + " · груз " + pawn.Cargo.ToString("0") + (pawn.Role == Profession.Defender ? "\nРежим: " + (pawn.DefenderMode == DefenderMode.Patrol ? "Патруль" : pawn.DefenderMode == DefenderMode.Guard ? "Пост" : "Поиск угроз") : "");
                 feedback.text = pawn.PendingRole.HasValue ? "На ядре → " + Names[(int)pawn.PendingRole.Value] : pawn.Health <= 0 ? "Погиб" : "";
+                if (pawn.Skills != null && priorityMenu.activeSelf)
+                {
+                    string[] talents = { "Сбор", "Оборона", "Поле", "Техника" };
+                    for (int i = 0; i < 8; i++)
+                    {
+                        var role = (Profession)i;
+                        var skills = pawn.Skills;
+                        string priority = skills.IsAutomatic(role) ? "Авто " + skills.Priority(role) : skills.Priority(role).ToString();
+                        priorityRows[i].text = Names[i] + " · " + talents[(int)skills.TalentFor(role)] + " " + skills.Level(role) +
+                            " · " + (world.Supports(role) ? priority : "выкл.");
+                        priorityButtons[i].interactable = world.Supports(role) && pawn.Health > 0;
+                    }
+                }
                 convert.interactable = pawn.Health > 0 && !world.Lost;
             }
             else
@@ -366,6 +399,7 @@ namespace SimpleColony
         void Inspect(string title, Color color, Action show, Func<string> summary = null)
         {
             descriptionPopup.Close();
+            priorityMenu.SetActive(false);
             inspectedTitle = title; inspectedColor = color; inspectSelection = show; inspectSummary = summary;
             Refresh();
         }
@@ -521,6 +555,7 @@ namespace SimpleColony
                 Place(actionButton.GetComponent<RectTransform>(),0,-slot*54,44,44); slot++;
             }
             Place(feedback.rectTransform,12,portraitMode?-146:-120,width-24,28); feedback.fontSize = 13;
+            PositionMenu(priorityMenu, portraitMode, true, bottomHeight);
             PositionMenu(construction, portraitMode, true, bottomHeight);
             PositionMenu(research, portraitMode, true, bottomHeight);
             PositionMenu(workforce, portraitMode, true, bottomHeight);

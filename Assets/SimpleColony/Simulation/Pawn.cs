@@ -34,7 +34,35 @@ namespace SimpleColony
         public Activity State { get; private set; }
         internal float Work { get; private set; }
 
-        internal Pawn(int id, Profession role) { Id = id; Role = role; }
+        public SkillProfile Skills { get; }
+        bool reconsider;
+        internal Pawn(int id, Profession role, SkillProfile skills = null)
+        {
+            Id = id; Role = role; Skills = skills;
+        }
+
+        internal void SetPriority(Profession role, int? priority)
+        {
+            Skills.Set(role, priority);
+            reconsider = true;
+        }
+
+        internal bool NeedsWorkReview => reconsider;
+
+        internal void BeginAssignment(Profession role, int target)
+        {
+            Role = role;
+            Release();
+            if (target >= 0) Assign(target);
+            reconsider = false;
+        }
+
+        internal void ReturnToCore(World world)
+        {
+            Release();
+            Go(world, World.Home);
+        }
+
         internal void Assign(int target) { Target = target; }
         internal void Release() { Target = -1; Work = 0; }
         internal void ConvertTo(Profession role)
@@ -84,7 +112,8 @@ namespace SimpleColony
                 return;
             }
             if (State == Activity.Resting && At != World.Home) Energy = Math.Min(100, Energy + dt);
-            if (!behaviors.ContainsKey(Role) && !PendingRole.HasValue && Cargo <= 0)
+            if (world.Population.PrepareWork(this, world, jobs)) return;
+            if (OrderedDestination < 0 && !behaviors.ContainsKey(Role) && !PendingRole.HasValue && Cargo <= 0)
             {
                 Release();
                 State = Activity.Idle;
@@ -102,7 +131,7 @@ namespace SimpleColony
                     else if (Role == Profession.Defender && world.Nodes[At].Threat > 0)
                     {
                         State = Activity.Working;
-                        behaviors[Role].Work(world,this,world.Nodes[At],dt);
+                        behaviors[Role].Work(world,this,world.Nodes[At],dt * world.Population.WorkRate(this));
                     }
                     else State = Activity.Guarding;
                     return;
@@ -139,8 +168,10 @@ namespace SimpleColony
                 return;
             }
             if (At != Target) { Go(world, Target); return; }
-            State = Activity.Working; Work += dt;
-            if (behaviors[Role].Work(world, this, world.Nodes[At], dt)) Release();
+            State = Activity.Working;
+            float workTime = dt * world.Population.WorkRate(this);
+            Work += workTime;
+            if (behaviors[Role].Work(world, this, world.Nodes[At], workTime)) Release();
         }
     }
 }

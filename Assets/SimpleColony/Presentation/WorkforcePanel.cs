@@ -61,15 +61,17 @@ namespace SimpleColony
         {
             var world = getWorld(); if (world == null) return;
             int free = world.ProfessionCount(Profession.Unemployed);
+            recruit.GetComponentInChildren<Text>().text = "+1 · " + world.Population.Price + " еды";
+            bool manual = !world.Population.AutomaticWork;
             recruit.interactable = world.CanRecruit;
-            freeWorkers.text = "Безработные " + free;
+            freeWorkers.text = manual ? "Безработные " + free : "По навыкам · " + world.Pawns.Count;
             for (int i = 0; i < 8; i++)
             {
                 int count = world.ProfessionCount((Profession)i);
                 counts[i].text = count.ToString();
-                decrease[i].interactable = !world.Lost && count > 0;
-                increase[i].interactable = world.Supports((Profession)i) && !world.Lost && free > 0;
-                increaseThree[i].interactable = world.Supports((Profession)i) && !world.Lost && free >= 3;
+                decrease[i].interactable = manual && !world.Lost && count > 0;
+                increase[i].interactable = manual && world.Supports((Profession)i) && !world.Lost && free > 0;
+                increaseThree[i].interactable = manual && world.Supports((Profession)i) && !world.Lost && free >= 3;
             }
         }
         static Button Counter(Transform parent, Font font, string text, float x, float y, UnityEngine.Events.UnityAction action)

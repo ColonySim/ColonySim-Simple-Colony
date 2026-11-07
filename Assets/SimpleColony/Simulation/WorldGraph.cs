@@ -3,7 +3,7 @@ using System.Collections.Generic;
 
 namespace SimpleColony
 {
-    public sealed class WorldGraph
+    public sealed class WorldGraph : IWorldGraph
     {
         readonly List<Node> nodes = new List<Node>();
         readonly IRandomSource random;

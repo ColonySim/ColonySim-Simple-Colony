@@ -160,8 +160,8 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: a79441f348de89743a2939f4d699eac1, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
+  m_Name:
+  m_EditorClassIdentifier:
   m_RenderShadows: 1
   m_RequiresDepthTextureOption: 2
   m_RequiresOpaqueTextureOption: 2
@@ -267,8 +267,8 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 073797afb82c5a1438f328866b10b3f0, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
+  m_Name:
+  m_EditorClassIdentifier:
   m_ComponentVersion: 1
   m_LightType: 4
   m_BlendStyleIndex: 0
@@ -350,3 +350,218 @@ Transform:
   m_Father: {fileID: 0}
   m_RootOrder: 1
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+
+--- !u!1 &5100000
+GameObject:
+  m_ObjectHideFlags: 0
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 5100001}
+  - component: {fileID: 5100002}
+  m_Layer: 0
+  m_Name: Simulation Assembly
+  m_TagString: Untagged
+  m_IsActive: 1
+--- !u!4 &5100001
+Transform:
+  m_GameObject: {fileID: 5100000}
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_Children:
+  - {fileID: 5100011}
+  - {fileID: 5100021}
+  - {fileID: 5100031}
+  - {fileID: 5100041}
+  - {fileID: 5100051}
+  m_Father: {fileID: 0}
+--- !u!114 &5100002
+MonoBehaviour:
+  m_GameObject: {fileID: 5100000}
+  m_Enabled: 1
+  m_Script: {fileID: 11500000, guid: 4a8f33fa2d564d988c477a73a482d0b9, type: 3}
+  m_Name:
+  m_EditorClassIdentifier:
+--- !u!1 &5100010
+GameObject:
+  m_ObjectHideFlags: 0
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 5100011}
+  - component: {fileID: 5100012}
+  - component: {fileID: 5100013}
+  m_Layer: 0
+  m_Name: World
+  m_TagString: Untagged
+  m_IsActive: 1
+--- !u!4 &5100011
+Transform:
+  m_GameObject: {fileID: 5100010}
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_Children: []
+  m_Father: {fileID: 5100001}
+--- !u!114 &5100012
+MonoBehaviour:
+  m_GameObject: {fileID: 5100010}
+  m_Enabled: 1
+  m_Script: {fileID: 11500000, guid: 0e8011e8992344f0ab4fb13b4af99df1, type: 3}
+  m_Name:
+  m_EditorClassIdentifier:
+  slot: 0
+--- !u!114 &5100013
+MonoBehaviour:
+  m_GameObject: {fileID: 5100010}
+  m_Enabled: 1
+  m_Script: {fileID: 11500000, guid: 8fe005a8c7de4392bf078bbb2e90903c, type: 3}
+  m_Name:
+  m_EditorClassIdentifier:
+--- !u!1 &5100020
+GameObject:
+  m_ObjectHideFlags: 0
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 5100021}
+  - component: {fileID: 5100022}
+  - component: {fileID: 5100023}
+  m_Layer: 0
+  m_Name: Control
+  m_TagString: Untagged
+  m_IsActive: 1
+--- !u!4 &5100021
+Transform:
+  m_GameObject: {fileID: 5100020}
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_Children: []
+  m_Father: {fileID: 5100001}
+--- !u!114 &5100022
+MonoBehaviour:
+  m_GameObject: {fileID: 5100020}
+  m_Enabled: 1
+  m_Script: {fileID: 11500000, guid: 0e8011e8992344f0ab4fb13b4af99df1, type: 3}
+  m_Name:
+  m_EditorClassIdentifier:
+  slot: 1
+--- !u!114 &5100023
+MonoBehaviour:
+  m_GameObject: {fileID: 5100020}
+  m_Enabled: 1
+  m_Script: {fileID: 11500000, guid: 8e9d29b026c349b7b569e39652af6b0f, type: 3}
+  m_Name:
+  m_EditorClassIdentifier:
+--- !u!1 &5100030
+GameObject:
+  m_ObjectHideFlags: 0
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 5100031}
+  - component: {fileID: 5100032}
+  - component: {fileID: 5100033}
+  - component: {fileID: 5100034}
+  m_Layer: 0
+  m_Name: Population
+  m_TagString: Untagged
+  m_IsActive: 1
+--- !u!4 &5100031
+Transform:
+  m_GameObject: {fileID: 5100030}
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_Children: []
+  m_Father: {fileID: 5100001}
+--- !u!114 &5100032
+MonoBehaviour:
+  m_GameObject: {fileID: 5100030}
+  m_Enabled: 1
+  m_Script: {fileID: 11500000, guid: 0e8011e8992344f0ab4fb13b4af99df1, type: 3}
+  m_Name:
+  m_EditorClassIdentifier:
+  slot: 2
+--- !u!114 &5100033
+MonoBehaviour:
+  m_GameObject: {fileID: 5100030}
+  m_Enabled: 1
+  m_Script: {fileID: 11500000, guid: b5cee00c03f3404a9141df75ba3e249e, type: 3}
+  m_Name:
+  m_EditorClassIdentifier:
+--- !u!114 &5100034
+MonoBehaviour:
+  m_GameObject: {fileID: 5100030}
+  m_Enabled: 0
+  m_Script: {fileID: 11500000, guid: b86d3c521962454d843baa6588651e2e, type: 3}
+  m_Name:
+  m_EditorClassIdentifier:
+--- !u!1 &5100040
+GameObject:
+  m_ObjectHideFlags: 0
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 5100041}
+  - component: {fileID: 5100042}
+  - component: {fileID: 5100043}
+  m_Layer: 0
+  m_Name: Threats
+  m_TagString: Untagged
+  m_IsActive: 1
+--- !u!4 &5100041
+Transform:
+  m_GameObject: {fileID: 5100040}
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_Children: []
+  m_Father: {fileID: 5100001}
+--- !u!114 &5100042
+MonoBehaviour:
+  m_GameObject: {fileID: 5100040}
+  m_Enabled: 1
+  m_Script: {fileID: 11500000, guid: 0e8011e8992344f0ab4fb13b4af99df1, type: 3}
+  m_Name:
+  m_EditorClassIdentifier:
+  slot: 3
+--- !u!114 &5100043
+MonoBehaviour:
+  m_GameObject: {fileID: 5100040}
+  m_Enabled: 1
+  m_Script: {fileID: 11500000, guid: 0f58627031da4eecbdbfa7970a7543e3, type: 3}
+  m_Name:
+  m_EditorClassIdentifier:
+--- !u!1 &5100050
+GameObject:
+  m_ObjectHideFlags: 0
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 5100051}
+  - component: {fileID: 5100052}
+  - component: {fileID: 5100053}
+  m_Layer: 0
+  m_Name: Research
+  m_TagString: Untagged
+  m_IsActive: 1
+--- !u!4 &5100051
+Transform:
+  m_GameObject: {fileID: 5100050}
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_Children: []
+  m_Father: {fileID: 5100001}
+--- !u!114 &5100052
+MonoBehaviour:
+  m_GameObject: {fileID: 5100050}
+  m_Enabled: 1
+  m_Script: {fileID: 11500000, guid: 0e8011e8992344f0ab4fb13b4af99df1, type: 3}
+  m_Name:
+  m_EditorClassIdentifier:
+  slot: 4
+--- !u!114 &5100053
+MonoBehaviour:
+  m_GameObject: {fileID: 5100050}
+  m_Enabled: 1
+  m_Script: {fileID: 11500000, guid: dc1d238fe3cd42e283ca4d1bdfb78f0c, type: 3}
+  m_Name:
+  m_EditorClassIdentifier:
