@@ -9,6 +9,8 @@ public sealed class SceneModuleInspector : Editor
     {
         var module = (SceneModule)target;
         EditorGUILayout.LabelField("Слот симуляции", module.Slot.ToString());
+        if (!string.IsNullOrEmpty(module.Description))
+            EditorGUILayout.HelpBox(module.Description, MessageType.Info);
         DrawDefaultInspector();
     }
 }

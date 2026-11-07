@@ -206,7 +206,8 @@ namespace SimpleColony
                 priorityButtons[i] = row;
             }
             workforce = Overlay("Workforce", "");
-            workforce.AddComponent<WorkforcePanel>().Initialize(font, () => world, Names, profession => ShowArticle(WikiCatalog.ProfessionId(profession)));
+            GetComponent<SimulationAssembly>().Running.Workforce(workforce.transform, font, () => world, Names,
+                profession => ShowArticle(WikiCatalog.ProfessionId(profession)));
             construction = Overlay("Construction", "");
             for (int i = 0; i < BuildingDefinition.All.Count; i++)
             {

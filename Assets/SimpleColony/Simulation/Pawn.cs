@@ -47,6 +47,7 @@ namespace SimpleColony
             reconsider = true;
         }
 
+        internal void ReconsiderWork() { reconsider = true; }
         internal bool NeedsWorkReview => reconsider;
 
         internal void BeginAssignment(Profession role, int target)
@@ -96,7 +97,7 @@ namespace SimpleColony
             }
             if (At == World.Home)
             {
-                if (Cargo > 0 && (Role != Profession.Stabilizer || CargoType != Resource.Stability || PendingRole.HasValue)) { world.Stores.Add(CargoType, Cargo); Cargo = 0; }
+                if (Cargo > 0 && (Role != Profession.Stabilizer || CargoType != Resource.Stability || PendingRole.HasValue || NeedsWorkReview)) { world.Stores.Add(CargoType, Cargo); Cargo = 0; }
                 if (PendingRole.HasValue) { Role = PendingRole.Value; PendingRole = null; Release(); }
                 if (Food < 95 && world.Stores.Spend(Resource.Food, dt)) Food = Math.Min(100, Food + dt * 12);
                 if (Health < 100 && world.Stores.Spend(Resource.Medicine, dt * .1f)) Health = Math.Min(100, Health + dt);

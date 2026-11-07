@@ -10,6 +10,7 @@ public static class SimulationValidation
     public static void Run()
     {
         ValidateSkilledPopulation();
+        ValidateColonyWorkPlan();
         ValidateObjectCommands();
         ValidateModuleConfigurations();
         for (int seed = 0; seed < 30; seed++)
@@ -107,6 +108,58 @@ public static class SimulationValidation
         Require(world.SetWorkPriority(0,Profession.Researcher,null) && pawn.Skills.IsAutomatic(Profession.Researcher), "Restore automatic priority");
         float food = world.Stores[Resource.Food];
         Require(world.Recruit(Profession.Unemployed) && world.Pawns[4].Skills != null && Math.Abs(food-world.Stores[Resource.Food]-50) < .001f, "Skilled recruitment");
+    }
+
+    static void ValidateColonyWorkPlan()
+    {
+        var model = new SkilledPawnModel();
+        var world = new World(42, population: model);
+        var plan = model.WorkPlan;
+        Require(!plan.ChangeMinimum(world, (Profession)99, 1), "Invalid minimum profession");
+        Require(!plan.ChangeMinimum(world, Profession.Unemployed, 1), "Unemployed minimum");
+        Require(!plan.ChangeMinimum(world, Profession.Gatherer, -1), "Negative minimum");
+        Require(!plan.SetPriority(world, Profession.Defender, 6), "Priority bounds");
+        Require(!plan.ChangeMinimum(new World(42), Profession.Gatherer, 1), "Foreign policy mutation");
+        Require(plan.ChangeMinimum(world, Profession.Gatherer, 1), "Set protected minimum");
+        Pawn best = world.Pawns[0];
+        foreach (var pawn in world.Pawns)
+        {
+            if (pawn.Skills.Level(Profession.Gatherer) > best.Skills.Level(Profession.Gatherer)) best = pawn;
+            // Emergency must override even a personal zero.
+            world.SetWorkPriority(pawn.Id, Profession.Defender, 0);
+        }
+        Require(plan.SetPriority(world, Profession.Defender, 5), "Declare defense emergency");
+        world.Step();
+        foreach (var pawn in world.Pawns)
+            Require(pawn.Role == (pawn == best ? Profession.Gatherer : Profession.Defender),
+                "Emergency displaced protected specialist or ignored weak worker");
+        Require(plan.ChangeMinimum(world, Profession.Gatherer, 1), "Increase minimum");
+        Require(plan.ChangeMinimum(world, Profession.Gatherer, 1), "Increase minimum again");
+        Require(plan.ChangeMinimum(world, Profession.Gatherer, 1), "Reserve entire population");
+        Require(!plan.ChangeMinimum(world, Profession.Medic, 1), "Minima exceed living population");
+        // Policy changes outside the core must first initiate a return trip.
+        var worker = world.Pawns[1];
+        SetFixtureProperty(worker, "At", 1);
+        SetFixtureProperty(worker, "Next", -1);
+        SetFixtureProperty(worker, "Food", 100f);
+        SetFixtureProperty(worker, "Energy", 100f);
+        world.Step();
+        Require(worker.Next >= 0 && worker.Target == -1, "Reassignment must return to core");
+
+        // Death frees a reservation; survivors still receive one protected role each.
+        SetFixtureProperty(best, "Health", 0f);
+        plan.Refresh(world);
+        foreach (var pawn in world.Pawns)
+            if (pawn.Health > 0) Require(plan.ReservedRole(world, pawn) == Profession.Gatherer, "Replace lost minimum worker");
+        world.GrantDebugResources();
+        Require(world.Recruit(Profession.Unemployed), "Recruit into protected workforce");
+        plan.Refresh(world);
+        Require(plan.ReservedRole(world, world.Pawns[4]) == Profession.Gatherer, "Newborn fills unmet minimum");
+
+        var limitedModel = new SkilledPawnModel();
+        var limited = new World(42, Mechanics.None, population: limitedModel);
+        Require(!limitedModel.WorkPlan.SetPriority(limited, Profession.Defender, 5), "Disabled module profession");
+        Require(new SkilledPawnModel().WorkPlan.Minimum(Profession.Gatherer) == 0, "Policy leaks across sessions");
     }
 
     static void ValidateObjectCommands()

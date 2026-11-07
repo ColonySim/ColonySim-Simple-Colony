@@ -22,7 +22,7 @@ namespace SimpleColony
                 module.Install(recipe);
             }
             installed.Validate();
-            if (recipe.Generate == null || recipe.StartControls == null || recipe.Population == null)
+            if (recipe.Generate == null || recipe.StartControls == null || recipe.CreatePopulation == null || recipe.Workforce == null)
                 throw new InvalidOperationException("Обязательный модуль не предоставил реализацию.");
             return recipe;
         }
