@@ -8,3 +8,13 @@ Builds/
 *.sln
 *.slnx
 .vs/
+
+# Локальные сборки и файлы редактора Unity
+/[Bb]uild/
+/[Bb]uilds/
+/.utmp/
+*.apk
+*.aab
+*.csproj
+*.sln
+*.slnx
